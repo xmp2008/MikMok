@@ -19,10 +19,10 @@ async function bootstrap() {
   const app = createApp();
   jobWorkerService.start();
 
-  const pendingTranscodeVideoIds = videoIndexService.listPendingTranscodeVideoIds();
+  const staleProcessingCount = videoIndexService.resetStaleProcessingVideos();
 
-  if (pendingTranscodeVideoIds.length > 0) {
-    await jobWorkerService.enqueueTranscodes(pendingTranscodeVideoIds);
+  if (staleProcessingCount > 0) {
+    console.log(`Reset ${staleProcessingCount} stale processing videos back to needs_transcode.`);
   }
 
   app.listen(env.PORT, env.HOST, () => {

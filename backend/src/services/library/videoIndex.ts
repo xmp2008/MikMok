@@ -311,6 +311,17 @@ class VideoIndexService {
     db.prepare("UPDATE videos SET playback_status = ? WHERE id = ?").run(playbackStatus, videoId);
   }
 
+  resetStaleProcessingVideos(): number {
+    // Processing is a transient worker state. When the process dies mid-transcode,
+    // rows would stay stuck forever and the client would poll a job that no longer
+    // exists. Reset them to needs_transcode so playback can trigger them again.
+    const result = db
+      .prepare("UPDATE videos SET playback_status = 'needs_transcode' WHERE playback_status = 'processing'")
+      .run();
+
+    return result.changes;
+  }
+
   getVideoCountByFolderIds(folderIds: string[]): Map<string, number> {
     if (folderIds.length === 0) {
       return new Map();

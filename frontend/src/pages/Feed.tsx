@@ -2,7 +2,7 @@ import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent, VideoHTMLAttributes, WheelEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { apiBaseUrl, apiRequest } from "../api/client";
+import { ApiRequestError, apiBaseUrl, apiRequest } from "../api/client";
 import { useUiStore } from "../store/uiStore";
 
 type FeedVideo = {
@@ -129,6 +129,23 @@ function formatFileSize(sourceSize: number): string {
 
 function formatPlaybackRate(playbackRate: number): string {
   return `${Number.isInteger(playbackRate) ? playbackRate.toFixed(0) : playbackRate}x`;
+}
+
+function translatePlaybackStatus(status: string): string {
+  switch (status) {
+    case "direct":
+      return "可直连播放";
+    case "ready":
+      return "转码就绪";
+    case "processing":
+      return "转码中";
+    case "needs_transcode":
+      return "需要转码";
+    case "failed":
+      return "转码失败";
+    default:
+      return status;
+  }
 }
 
 function ActionIcon({ name }: { name: "favorite" | "favoriteFilled" | "info" | "mute" | "sound" | "speed" }) {
@@ -332,6 +349,7 @@ export function FeedPage() {
   const [showPlaybackRateMenu, setShowPlaybackRateMenu] = useState(false);
   const [showInfoCard, setShowInfoCard] = useState(false);
   const [stageTransition, setStageTransition] = useState<StageDirection>(null);
+  const [transcodingStatus, setTranscodingStatus] = useState<string | null>(null);
   const requestedVideoId = searchParams.get("video");
   const pointerStartXRef = useRef<number | null>(null);
   const pointerStartYRef = useRef<number | null>(null);
@@ -360,12 +378,85 @@ export function FeedPage() {
   const scrubStartTimeRef = useRef(0);
   const scrubWasPlayingRef = useRef(false);
   const suppressViewportClickRef = useRef(false);
+  const transcodingPollTimerRef = useRef<number | null>(null);
+  const transcodingVideoIdRef = useRef<string | null>(null);
   const wakeLockRef = useRef<WakeLockSentinelLike | null>(null);
   const warmedClipIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     setMuted(!soundOnOpen);
   }, [setMuted, soundOnOpen]);
+
+  // ---- Playback-triggered transcoding -------------------------------------
+  // When the active clip is not directly playable, the backend answers the
+  // stream request with VIDEO_PREPARING after queueing an on-demand transcode.
+  // We then poll the progress endpoint and reload the clip once it is ready.
+  function clearTranscodingPoll() {
+    if (transcodingPollTimerRef.current !== null) {
+      window.clearTimeout(transcodingPollTimerRef.current);
+      transcodingPollTimerRef.current = null;
+    }
+  }
+
+  function startTranscodingPoll(videoId: string, message: string) {
+    clearTranscodingPoll();
+    transcodingVideoIdRef.current = videoId;
+    setTranscodingStatus(message);
+
+    const poll = async () => {
+      if (transcodingVideoIdRef.current !== videoId) {
+        return;
+      }
+
+      try {
+        const status = await apiRequest<{
+          playbackStatus: string;
+          progress: { current: number; message: string | null; status: string; total: number } | null;
+        }>(`/playback/status/${videoId}`);
+
+        if (transcodingVideoIdRef.current !== videoId) {
+          return;
+        }
+
+        if (status.playbackStatus === "ready" || status.playbackStatus === "direct") {
+          transcodingVideoIdRef.current = null;
+          setTranscodingStatus(null);
+          setClips((current) =>
+            current.map((clip) => (clip.id === videoId ? { ...clip, playbackStatus: status.playbackStatus } : clip))
+          );
+          return;
+        }
+
+        if (status.playbackStatus === "failed") {
+          transcodingVideoIdRef.current = null;
+          setTranscodingStatus(null);
+          showSnackbar("转码失败，该视频暂时无法播放");
+          return;
+        }
+
+        setTranscodingStatus(status.progress?.message || "正在转码…");
+      } catch {
+        // Transient network errors keep the overlay up; polling continues.
+      }
+
+      if (transcodingVideoIdRef.current === videoId) {
+        transcodingPollTimerRef.current = window.setTimeout(() => {
+          void poll();
+        }, 2000);
+      }
+    };
+
+    void poll();
+  }
+
+  useEffect(
+    () => () => {
+      clearTranscodingPoll();
+      transcodingVideoIdRef.current = null;
+    },
+    []
+  );
+  // -------------------------------------------------------------------------
 
   useEffect(() => {
     let cancelled = false;
@@ -387,7 +478,7 @@ export function FeedPage() {
         setError(null);
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Failed to load videos.");
+          setError(loadError instanceof Error ? loadError.message : "加载视频失败。");
         }
       } finally {
         if (!cancelled) {
@@ -422,6 +513,14 @@ export function FeedPage() {
   const activeSessionResumeSeconds = activeClip ? (resumePositionByVideoId[activeClip.id] ?? 0) : 0;
   const previousClip = clips.length > 1 ? clips[(normalizedFeedIndex - 1 + clips.length) % clips.length] ?? null : activeClip;
   const nextClip = clips.length > 1 ? clips[(normalizedFeedIndex + 1) % clips.length] ?? null : activeClip;
+
+  useEffect(() => {
+    if (!activeClip || activeClip.playbackStatus !== "processing") {
+      return;
+    }
+
+    startTranscodingPoll(activeClip.id, "正在转码…");
+  }, [activeClip, activeClip?.id, activeClip?.playbackStatus]);
 
   useEffect(() => {
     if (!requestedVideoId || clips.length === 0 || handledRequestedVideoIdRef.current === requestedVideoId) {
@@ -1267,6 +1366,47 @@ export function FeedPage() {
   function handleActiveVideoError() {
     clearLoadingOverlayTimer();
     setIsActiveVideoLoading(false);
+
+    const clip = activeClip;
+
+    if (!clip || clip.playbackStatus === "direct" || clip.playbackStatus === "ready") {
+      return;
+    }
+
+    // The stream endpoint answered VIDEO_PREPARING (transcode queued/running) or
+    // the clip failed to load for another reason while not playable. Probe the
+    // playback status and either follow the running transcode or ask for one.
+    void (async () => {
+      try {
+        const status = await apiRequest<{
+          playbackStatus: string;
+          progress: { current: number; message: string | null; status: string; total: number } | null;
+        }>(`/playback/status/${clip.id}`);
+
+        if (status.playbackStatus === "processing") {
+          startTranscodingPoll(clip.id, status.progress?.message || "正在转码…");
+          return;
+        }
+
+        if (status.playbackStatus === "direct" || status.playbackStatus === "ready") {
+          setClips((current) =>
+            current.map((item) => (item.id === clip.id ? { ...item, playbackStatus: status.playbackStatus } : item))
+          );
+          return;
+        }
+
+        await apiRequest(`/playback/prepare/${clip.id}`, { method: "POST" });
+        startTranscodingPoll(clip.id, "正在转码…");
+      } catch (prepareError) {
+        if (prepareError instanceof ApiRequestError && prepareError.code === "TRANSCODE_DISABLED") {
+          showSnackbar("自动转码已关闭，无法播放该视频");
+        } else if (prepareError instanceof ApiRequestError && prepareError.code === "TRANSCODE_NOT_QUEUED") {
+          showSnackbar("视频暂时无法加入转码队列");
+        } else {
+          showSnackbar("视频暂时无法播放");
+        }
+      }
+    })();
   }
 
   function handleActiveVideoTimeUpdate() {
@@ -1354,7 +1494,7 @@ export function FeedPage() {
     showControlsTemporarily();
     const willFavorite = !favoriteIds.includes(activeClip.id);
     toggleFavoriteId(activeClip.id);
-    showSnackbar(willFavorite ? "Added to favorites" : "Removed from favorites");
+    showSnackbar(willFavorite ? "已加入收藏" : "已取消收藏");
   }
 
   function handleAuthorOpen() {
@@ -1472,9 +1612,9 @@ export function FeedPage() {
         <div className="feed-screen__ambient" />
         <div className="feed-screen__viewport">
           <div className="feed-screen__empty">
-            <p className="eyebrow">Loading Feed</p>
-            <h1>Scanning your mounted video sources</h1>
-            <p>Looking for the first playable clip in your registered folders.</p>
+            <p className="eyebrow">正在加载</p>
+            <h1>正在扫描挂载的视频来源</h1>
+            <p>正在从已注册的文件夹中寻找可播放的视频。</p>
           </div>
         </div>
       </section>
@@ -1487,10 +1627,10 @@ export function FeedPage() {
         <div className="feed-screen__ambient" />
         <div className="feed-screen__viewport">
           <div className="feed-screen__empty">
-            <p className="eyebrow">No Video Ready</p>
-            <h1>Homepage could not open a playable clip.</h1>
-            <p>{error ?? "No supported video files were found in the mounted folders."}</p>
-            <p>Open Folders and add a mount like `/mounts`, then scan it into the feed.</p>
+            <p className="eyebrow">暂无可播放视频</p>
+            <h1>首页没有打开可播放的视频。</h1>
+            <p>{error ?? "挂载目录中没有找到支持的视频文件。"}</p>
+            <p>打开「文件夹」添加挂载（如 /mounts），扫描后即可播放。</p>
           </div>
         </div>
       </section>
@@ -1586,6 +1726,25 @@ export function FeedPage() {
             </span>
           </div>
         ) : null}
+        {transcodingStatus && activeClip && !scrubState ? (
+          <div className="feed-screen__loading-overlay" role="status" aria-live="polite">
+            <div
+              aria-hidden="true"
+              className="feed-screen__loading-poster"
+              style={{
+                backgroundImage: activeClipDetails?.thumbnailUrl ?? activeClip.thumbnailSmUrl
+                  ? `url("${activeClipDetails?.thumbnailUrl ?? activeClip.thumbnailSmUrl}")`
+                  : undefined
+              }}
+            />
+            <div className="feed-screen__transcoding-note">
+              <span className="feed-screen__loading-badge">
+                <LoadingIcon />
+              </span>
+              <p>{transcodingStatus}</p>
+            </div>
+          </div>
+        ) : null}
         <div className="feed-screen__visual">
           <div
             className={stageTransition ? "feed-stage feed-stage--transitioning" : "feed-stage"}
@@ -1626,7 +1785,7 @@ export function FeedPage() {
         </div>
         <div
           className={feedControlsVisible ? "feed-screen__side-actions" : "feed-screen__side-actions feed-screen__side-actions--hidden"}
-          aria-label="Video actions"
+          aria-label="视频操作"
         >
           {activeClip.author ? (
             <button
@@ -1645,7 +1804,7 @@ export function FeedPage() {
             </button>
           ) : null}
           <button
-            aria-label={activeClipIsFavorite ? "Remove from favorites" : "Add to favorites"}
+            aria-label={activeClipIsFavorite ? "取消收藏" : "加入收藏"}
             aria-pressed={activeClipIsFavorite}
             className={activeClipIsFavorite ? "feed-side-action feed-side-action--active" : "feed-side-action"}
             onClick={handleFavoriteToggle}
@@ -1656,7 +1815,7 @@ export function FeedPage() {
             </span>
           </button>
           <button
-            aria-label={showInfoCard ? "Hide clip details" : "Show clip details"}
+            aria-label={showInfoCard ? "隐藏视频信息" : "显示视频信息"}
             aria-pressed={showInfoCard}
             className={showInfoCard ? "feed-side-action feed-side-action--active" : "feed-side-action"}
             onClick={() => {
@@ -1670,7 +1829,7 @@ export function FeedPage() {
             </span>
           </button>
           <button
-            aria-label={isMuted ? "Turn sound on" : "Mute sound"}
+            aria-label={isMuted ? "打开声音" : "静音"}
             aria-pressed={!isMuted}
             className={!isMuted ? "feed-side-action feed-side-action--active" : "feed-side-action"}
             onClick={() => {
@@ -1685,7 +1844,7 @@ export function FeedPage() {
           </button>
           <div className="feed-side-action-group">
             {showPlaybackRateMenu ? (
-              <div className="feed-side-action__sheet" role="menu" aria-label="Playback speed">
+              <div className="feed-side-action__sheet" role="menu" aria-label="播放速度">
                 {playbackRateOptions.map((rateOption) => (
                   <button
                     aria-pressed={playbackRate === rateOption}
@@ -1708,7 +1867,7 @@ export function FeedPage() {
             <button
               aria-expanded={showPlaybackRateMenu}
               aria-haspopup="menu"
-              aria-label={`Playback speed ${formatPlaybackRate(playbackRate)}`}
+              aria-label={`播放速度 ${formatPlaybackRate(playbackRate)}`}
               className={
                 showPlaybackRateMenu || playbackRate !== 1 ? "feed-side-action feed-side-action--active" : "feed-side-action"
               }
@@ -1728,7 +1887,7 @@ export function FeedPage() {
           {showInfoCard ? (
             <div className="feed-panel">
               <div className="feed-panel__meta">
-                <p className="eyebrow">For You</p>
+                <p className="eyebrow">推荐</p>
                 <h1>{activeClip.title}</h1>
                 {activeClip.author ? (
                   <button className="feed-panel__author" onClick={handleAuthorOpen} type="button">
@@ -1741,7 +1900,7 @@ export function FeedPage() {
                     </span>
                     <span className="feed-panel__author-copy">
                       <strong>{activeClip.author.name}</strong>
-                      <span>Open creator page</span>
+                      <span>进入作者主页</span>
                     </span>
                   </button>
                 ) : null}
@@ -1751,9 +1910,9 @@ export function FeedPage() {
                   <span className="pill">{formatFileSize(activeClip.sourceSize)}</span>
                   {activeClip.durationSeconds ? <span className="pill">{formatDuration(activeClip.durationSeconds)}</span> : null}
                   {activeClip.width && activeClip.height ? <span className="pill">{activeClip.width}×{activeClip.height}</span> : null}
-                  <span className="pill">{activeClip.playbackStatus}</span>
+                  <span className="pill">{translatePlaybackStatus(activeClip.playbackStatus)}</span>
                   <span className="pill">{formatPlaybackRate(playbackRate)}</span>
-                  {activeClipIsFavorite ? <span className="pill pill--solid">favorited</span> : null}
+                  {activeClipIsFavorite ? <span className="pill pill--solid">已收藏</span> : null}
                   {activeClip.collections.map((collection) => (
                     <span key={collection.id} className="pill">
                       {collection.name}
@@ -1761,14 +1920,14 @@ export function FeedPage() {
                   ))}
                 </div>
                 <p className="feed-panel__subline">
-                  {activeClip.sourceName} · updated {new Date(activeClip.updatedAt * 1000).toLocaleString()}
+                  {activeClip.sourceName} · 更新于 {new Date(activeClip.updatedAt * 1000).toLocaleString()}
                 </p>
                 <p className="feed-panel__subline">
                   {activeClipDetails
-                    ? `${activeClipDetails.playCount} plays · resume ${Math.round(activeClipDetails.resumePositionSeconds)}s${
+                    ? `播放 ${activeClipDetails.playCount} 次 · 续播 ${Math.round(activeClipDetails.resumePositionSeconds)} 秒${
                         activeClipDetails.videoCodec ? ` · ${activeClipDetails.videoCodec}` : ""
                       }${activeClipDetails.audioCodec ? ` / ${activeClipDetails.audioCodec}` : ""}`
-                    : "Loading playback state..."}
+                    : "正在加载播放状态…"}
                 </p>
                 {activeClipDetails?.folderPath ? (
                   <p className="feed-panel__subline">

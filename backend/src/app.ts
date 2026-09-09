@@ -13,6 +13,7 @@ import { foldersRouter } from "./routes/folders.js";
 import { healthRouter } from "./routes/health.js";
 import { integrationsMytubeRouter } from "./routes/integrationsMytube.js";
 import { jobsRouter } from "./routes/jobs.js";
+import { playbackRouter } from "./routes/playback.js";
 import { preferencesRouter } from "./routes/preferences.js";
 import { remoteSourcesRouter } from "./routes/remoteSources.js";
 import { streamRouter } from "./routes/stream.js";
@@ -53,6 +54,7 @@ export function createApp() {
   app.use("/api/remote-sources", remoteSourcesRouter);
   app.use("/api/uploads", uploadsRouter);
   app.use("/api/videos", videosRouter);
+  app.use("/api/playback", playbackRouter);
   app.use("/stream", streamRouter);
 
   if (existsSync(frontendIndexPath)) {

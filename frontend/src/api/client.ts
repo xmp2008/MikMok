@@ -12,6 +12,17 @@ type ApiSuccess<T> = {
 
 type ApiResponse<T> = ApiFailure | ApiSuccess<T>;
 
+export class ApiRequestError extends Error {
+  constructor(
+    public readonly code: string | null,
+    public readonly statusCode: number,
+    message: string
+  ) {
+    super(message);
+    this.name = "ApiRequestError";
+  }
+}
+
 export const apiBaseUrl = import.meta.env.VITE_API_URL ?? "/api";
 
 function readCookie(name: string): string | null {
@@ -47,11 +58,12 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   });
 
   const payload = (await response.json().catch(() => null)) as ApiResponse<T> | null;
+  const errorCode = payload && !payload.success ? payload.code ?? null : null;
   const errorMessage =
     payload && !payload.success ? payload.error ?? `Request failed with status ${response.status}.` : undefined;
 
   if (!response.ok || !payload || payload.success === false) {
-    throw new Error(errorMessage ?? `Request failed with status ${response.status}.`);
+    throw new ApiRequestError(errorCode, response.status, errorMessage ?? `Request failed with status ${response.status}.`);
   }
 
   return payload.data;

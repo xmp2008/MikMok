@@ -1,7 +1,7 @@
 import { env } from "../../config/env.js";
 import { thumbnailService } from "../media/thumbnailService.js";
 import { TranscodeError, transcodeService } from "../media/transcodeService.js";
-import type { PlaybackStatus } from "../media/playbackPolicy.js";
+import { isPlayablePlaybackStatus, type PlaybackStatus } from "../media/playbackPolicy.js";
 import { preferencesService } from "../preferences/preferencesService.js";
 import { videoIndexService } from "../library/videoIndex.js";
 
@@ -41,22 +41,32 @@ class JobWorkerService {
     this.intervalHandle = null;
   }
 
-  async enqueueTranscodes(videoIds: string[]): Promise<void> {
+  async enqueueTranscodes(videoIds: string[]): Promise<Job | null> {
     if (!this.isTranscodingActive()) {
-      return;
+      return null;
     }
 
     const uniqueVideoIds = [...new Set(videoIds)];
+    let firstQueuedJob: Job | null = null;
     let hasQueuedWork = false;
 
     for (const videoId of uniqueVideoIds) {
       const video = videoIndexService.findVideoById(videoId);
 
-      if (!video || (video.playbackStatus !== "needs_transcode" && video.playbackStatus !== "failed")) {
+      if (!video || isPlayablePlaybackStatus(video.playbackStatus)) {
         continue;
       }
 
-      jobService.enqueueTranscodeJob(videoId);
+      // Idempotent: re-preparing an already queued/running clip returns the
+      // existing job instead of stacking duplicate work.
+      const existingJob = jobService.findActiveJob("transcode", "video", videoId);
+
+      if (existingJob) {
+        firstQueuedJob ??= existingJob;
+        continue;
+      }
+
+      firstQueuedJob ??= jobService.enqueueTranscodeJob(videoId);
       videoIndexService.updatePlaybackStatus(videoId, "processing");
       hasQueuedWork = true;
     }
@@ -65,6 +75,12 @@ class JobWorkerService {
       this.start();
       void this.pump();
     }
+
+    return firstQueuedJob;
+  }
+
+  findActiveTranscodeJob(videoId: string): Job | null {
+    return jobService.findActiveJob("transcode", "video", videoId);
   }
 
   private async pump(): Promise<void> {

@@ -4,6 +4,7 @@ import { Router } from "express";
 
 import { myTubeAdapterService } from "../services/integrations/mytubeAdapter.js";
 import { parseCanonicalVideoId } from "../services/integrations/videoIds.js";
+import { jobWorkerService } from "../services/jobs/jobWorker.js";
 import { mediaLibraryService } from "../services/library/mediaLibrary.js";
 import { isPlayablePlaybackStatus } from "../services/media/playbackPolicy.js";
 import { pipeUpstreamResponse } from "../utils/proxy.js";
@@ -65,8 +66,19 @@ streamRouter.get("/:id", async (request, response) => {
     throw new AppError(404, "VIDEO_NOT_FOUND", "Video not found.");
   }
 
-  if (!isPlayablePlaybackStatus(video.playbackStatus)) {
-    throw new AppError(409, "VIDEO_NOT_PLAYABLE", "Video is not ready for direct playback.");
+  const isPlaybackReady = isPlayablePlaybackStatus(video.playbackStatus);
+
+  if (!isPlaybackReady && video.playbackStatus !== "processing") {
+    // Playback-triggered transcode: the viewer just opened a clip that cannot be
+    // served directly (needs_transcode/failed). Kick off an on-demand transcode
+    // instead of rejecting the request outright, then point the client at the
+    // progress endpoint so it can show "transcoding" and resume when ready.
+    await jobWorkerService.enqueueTranscodes([video.id]);
+    throw new AppError(202, "VIDEO_PREPARING", "视频需要转码，已开始准备，请稍候。");
+  }
+
+  if (!isPlaybackReady) {
+    throw new AppError(202, "VIDEO_PREPARING", "视频正在转码中，请稍候。");
   }
 
   const playbackSourcePath = video.playbackPath ?? video.sourcePath;

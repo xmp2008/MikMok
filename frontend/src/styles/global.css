@@ -246,6 +246,7 @@ a {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .list-card > div,
@@ -622,6 +623,32 @@ a {
   box-shadow: 0 22px 54px rgba(0, 0, 0, 0.32);
   backdrop-filter: blur(24px);
   color: rgba(255, 255, 255, 0.92);
+}
+
+.feed-screen__transcoding-note {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.feed-screen__transcoding-note .feed-screen__loading-badge {
+  width: 64px;
+  height: 64px;
+}
+
+.feed-screen__transcoding-note p {
+  margin: 0;
+  padding: 8px 18px;
+  border-radius: 999px;
+  background: rgba(6, 8, 12, 0.44);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(18px);
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .feed-screen__loading-icon {
@@ -1150,7 +1177,8 @@ a {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
+  gap: 12px 16px;
+  flex-wrap: wrap;
 }
 
 .settings-control + .settings-control {
@@ -1166,12 +1194,14 @@ a {
   display: grid;
   gap: 6px;
   min-width: 0;
+  flex: 1 1 220px;
 }
 
 .settings-control__label {
   margin: 0;
   color: var(--text-main);
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .settings-control__help {
@@ -1179,6 +1209,7 @@ a {
   color: var(--text-muted);
   font-size: 0.92rem;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .settings-switch {
@@ -1214,6 +1245,8 @@ a {
 .settings-select-wrap {
   position: relative;
   width: 100%;
+  min-width: 0;
+  flex: 1 1 240px;
   display: block;
 }
 
@@ -1222,6 +1255,8 @@ a {
   -webkit-appearance: none;
   -moz-appearance: none;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 50px;
   padding: 0 48px 0 16px;
   border: 1px solid rgba(255, 255, 255, 0.14);
