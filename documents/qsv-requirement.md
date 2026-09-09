@@ -62,18 +62,32 @@ ffmpeg -init_hw_device qsv=hw:low_power=1 -i in \
 | 项 | 说明 |
 | --- | --- |
 | 自动转码开关 | `transcodeAutoEnabled`（默认开）。关闭后：新视频不再入队、已排队任务不再启动、运行中判断处直接回退 `needs_transcode`——ffmpeg/QSV 完全不会被拉起。`TRANSCODE_ENABLED=0` 仍然全局强制关闭（优先级最高）。 |
-| 质量档位 | `transcodeQuality`：`high`/`medium`（默认）/`low`。QSV 用 `-global_quality`（23/27/32）+ preset（veryslow/veryfast/veryfast）+ 限高（原画/720p/480p，等比 `scale=-2:-2`/`scale=-4:-2` CPU 侧缩放后 hwupload）+ async_depth（4/4/2）；libx264 同映射用 `-crf`。 |
+| 质量档位 | `transcodeQuality`：`high`/`medium`（默认）/`low`。QSV 用 VBR 码率目标（6M / 2.5M / 1M avg，配 maxrate/bufsize）+ preset（veryslow/veryfast/veryfast）+ 限高（原画/720p/480p，等比 `scale=-2:-2`/`scale=-4:-2` CPU 侧缩放后 hwupload）+ async_depth（4/4/2）；libx264 同码率目标镜像（`-b:v`/`-maxrate`/`-bufsize`）。 |
 | 持久化 | 两个偏好存 `app_state` KV 表（`preferences.transcode_auto_enabled` / `preferences.transcode_quality`），运行时生效，**无需重启容器**。 |
 | API | `PATCH /api/preferences` 新增 `transcodeAutoEnabled: boolean`、`transcodeQuality: "high"\|"medium"\|"low"`；`GET /api/health` 新增上报 `transcodeAutoEnabled`/`transcodeQuality`。 |
 | UI | Settings 页新增 "Transcoding" 卡片：Auto transcode 开关 + Transcode quality 下拉（High 原画/Medium 720p/Low 480p），样式沿用现有 settings-switch/settings-select。 |
 
-### 质量档位设计依据
+### 质量档位设计依据（真机二分定案，2026-09-09）
 
-- `-global_quality` 是 QSV ICQ 原生质量参数，量纲与 x264 CRF 一致（越低越清晰）。
-- medium 锚定 720p：500KB/s 弱上行下 720p@q27 约需 1~1.5MB/s，配 WiFi 好/中
-  场景；low 锚定 480p@q32，按 500KB/s 上行可流畅播放。
+**Jasper Lake VDEnc 的质量控制只能走 VBR 码率目标**——真机二分实测：
+
+- ❌ `-global_quality`（ICQ 模式）：`MFX_ERR_INVALID_VIDEO_PARAM (-15)`，
+  编码器初始化直接失败（low_power=1 的 VDEnc 路径不支持 ICQ）。
+- ❌ `-cqp` / `-qp_i`/`-qp_p`（CQP 模式）：Debian ffmpeg 5.1 的 h264_qsv
+  未编译这些简写选项（`Unrecognized option`）。
+- ✅ `-b:v` + `-maxrate` + `-bufsize`（VBR）：三档全部通过，产物 mp4 正常。
+
+**码率定档**（对齐实际上行带宽）：
+
+| 档位 | 分辨率 | avg / max / buf | 均码折算 |
+| --- | --- | --- | --- |
+| high | 原画 | 6M / 8M / 12M | ~750 KB/s（家宽 5MB/s 富余） |
+| medium | ≤720p | 2.5M / 3.5M / 6M | ~310 KB/s（500KB/s 弱上行可放） |
+| low | ≤480p | 1M / 1.4M / 2.4M | ~125 KB/s（最差网络兜底） |
+
 - 缩放在 CPU 侧 `scale` 完成后 `hwupload`（VDEnc 接受 sw 输入）：N5105 做
   一次缩放远比软编便宜，且避免 QSV 缩放 VPP 在 low_power 路径的能力差异。
+- libx264 路径与 QSV 用同一套码率目标（放弃 CRF），保证双后端档位语义一致。
 
 ### 改动文件（第二轮）
 

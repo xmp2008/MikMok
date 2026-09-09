@@ -12,8 +12,14 @@ const execFileAsync = promisify(execFile);
 export type TranscodeQualityLevel = "high" | "medium" | "low";
 
 type TranscodeQualityOptions = {
-  // Crispness: QSV uses -global_quality (ICQ), libx264 uses -crf.
-  crispness: number;
+  // VBR rate control. Jasper Lake VDEnc REJECTS ICQ mode (-global_quality →
+  // MFX_ERR_INVALID_VIDEO_PARAM -15) and Debian's ffmpeg 5.1 h264_qsv has no
+  // -cqp/-qp_i options, so bitrate-targeted VBR is the portable hardware
+  // quality control here (verified on-device; see documents/qsv-requirement.md).
+  // libx264 mirrors the exact same rate targets for consistent tiering.
+  avgBitrate: string;
+  maxBitrate: string;
+  bufferSize: string;
   // Preset: encoder speed/efficiency tradeoff (QSV VDEnc presets + x264 presets).
   preset: string;
   // Scale factor applied to the source resolution; null keeps the source size.
@@ -40,15 +46,15 @@ class TranscodeError extends Error {
 
 const defaultQualityLevel: TranscodeQualityLevel = "medium";
 
-// Quality presets tuned for playback over constrained uplinks:
-// - high: source resolution, near-transparent quality (home LAN / strong WiFi)
-// - medium: capped at 720p, solid quality (decent WiFi)
-// - low: capped at 480p, leaner bitrate for weak hotel/cellular uplinks.
-// QSV crispness mirrors the CRF scale (~23 default); VDEnc ICQ uses the same range.
+// Rate-control presets tuned for playback over constrained uplinks (bitrate
+// targets sized for the tier caps; VDEnc ICQ is NOT available on Jasper Lake):
+// - high: source resolution, 6M avg — home LAN / strong WiFi
+// - medium: capped at 720p, 2.5M avg (~310 KB/s) — decent WiFi, fits 500KB/s uplinks
+// - low: capped at 480p, 1M avg (~125 KB/s) — weakest hotel/cellular uplinks.
 const transcodeQualityLevels: Record<TranscodeQualityLevel, TranscodeQualityOptions> = {
-  high: { crispness: 23, preset: "veryslow", scale: null, qsvAsyncDepth: 4 },
-  medium: { crispness: 27, preset: "veryfast", scale: -2, qsvAsyncDepth: 4 },
-  low: { crispness: 32, preset: "veryfast", scale: -4, qsvAsyncDepth: 2 }
+  high: { avgBitrate: "6M", maxBitrate: "8M", bufferSize: "12M", preset: "veryslow", scale: null, qsvAsyncDepth: 4 },
+  medium: { avgBitrate: "2500k", maxBitrate: "3500k", bufferSize: "6000k", preset: "veryfast", scale: -2, qsvAsyncDepth: 4 },
+  low: { avgBitrate: "1000k", maxBitrate: "1400k", bufferSize: "2400k", preset: "veryfast", scale: -4, qsvAsyncDepth: 2 }
 };
 
 function normalizeError(error: unknown): TranscodeError {
@@ -116,8 +122,12 @@ function buildQsvArgs(sourcePath: string, outputPath: string, quality: Transcode
     "h264_qsv",
     "-preset",
     quality.preset,
-    "-global_quality",
-    String(quality.crispness),
+    "-b:v",
+    quality.avgBitrate,
+    "-maxrate",
+    quality.maxBitrate,
+    "-bufsize",
+    quality.bufferSize,
     "-async_depth",
     String(quality.qsvAsyncDepth),
     "-c:a",
@@ -148,8 +158,12 @@ function buildLibx264Args(sourcePath: string, outputPath: string, quality: Trans
     "libx264",
     "-preset",
     quality.preset,
-    "-crf",
-    String(quality.crispness),
+    "-b:v",
+    quality.avgBitrate,
+    "-maxrate",
+    quality.maxBitrate,
+    "-bufsize",
+    quality.bufferSize,
     "-pix_fmt",
     "yuv420p",
     "-c:a",
