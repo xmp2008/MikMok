@@ -4,9 +4,29 @@ import { unlink, rename } from "node:fs/promises";
 import { promisify } from "node:util";
 
 import { env } from "../../config/env.js";
+import { preferencesService } from "../preferences/preferencesService.js";
 import { uploadStoreService } from "../storage/uploadStore.js";
 
 const execFileAsync = promisify(execFile);
+
+export type TranscodeQualityLevel = "high" | "medium" | "low";
+
+type TranscodeQualityOptions = {
+  // Crispness: QSV uses -global_quality (ICQ), libx264 uses -crf.
+  crispness: number;
+  // Preset: encoder speed/efficiency tradeoff (QSV VDEnc presets + x264 presets).
+  preset: string;
+  // Scale factor applied to the source resolution; null keeps the source size.
+  scale: number | null;
+  // Encoder look-ahead buffer depth for QSV (lower = snappier on weak iGPUs).
+  qsvAsyncDepth: number;
+};
+
+type ResolvedTranscodeOptions = {
+  qualityLevel: TranscodeQualityLevel;
+  quality: TranscodeQualityOptions;
+  autoEnabled: boolean;
+};
 
 class TranscodeError extends Error {
   constructor(
@@ -17,6 +37,19 @@ class TranscodeError extends Error {
     this.name = "TranscodeError";
   }
 }
+
+const defaultQualityLevel: TranscodeQualityLevel = "medium";
+
+// Quality presets tuned for playback over constrained uplinks:
+// - high: source resolution, near-transparent quality (home LAN / strong WiFi)
+// - medium: capped at 720p, solid quality (decent WiFi)
+// - low: capped at 480p, leaner bitrate for weak hotel/cellular uplinks.
+// QSV crispness mirrors the CRF scale (~23 default); VDEnc ICQ uses the same range.
+const transcodeQualityLevels: Record<TranscodeQualityLevel, TranscodeQualityOptions> = {
+  high: { crispness: 23, preset: "veryslow", scale: null, qsvAsyncDepth: 4 },
+  medium: { crispness: 27, preset: "veryfast", scale: -2, qsvAsyncDepth: 4 },
+  low: { crispness: 32, preset: "veryfast", scale: -4, qsvAsyncDepth: 2 }
+};
 
 function normalizeError(error: unknown): TranscodeError {
   if (error instanceof TranscodeError) {
@@ -47,9 +80,22 @@ function isQsvConfigurationError(message: string): boolean {
   );
 }
 
-function buildQsvArgs(sourcePath: string, outputPath: string): string[] {
+function formatScaleFilter(scale: number | null): string | null {
+  // Negative ffmpeg scale values keep the aspect ratio and only downscale.
+  return scale === null ? null : `scale=${scale}:-2`;
+}
+
+function buildQsvArgs(sourcePath: string, outputPath: string, quality: TranscodeQualityOptions): string[] {
   // low_power=1 forces the VDEnc (EncSliceLP) path required by Jasper Lake and other
   // low-power Intel iGPUs that expose no fixed-function EncSlice entrypoint.
+  const videoFilterChain = ["format=nv12", "hwupload=extra_hw_frames=64"];
+  const scaleFilter = formatScaleFilter(quality.scale);
+
+  if (scaleFilter) {
+    // CPU-side scale stays cheap and VDEnc accepts scaled frames via hwupload.
+    videoFilterChain.unshift(scaleFilter);
+  }
+
   return [
     "-v",
     "error",
@@ -65,13 +111,15 @@ function buildQsvArgs(sourcePath: string, outputPath: string): string[] {
     "-map",
     "0:a:0?",
     "-vf",
-    "format=nv12,hwupload=extra_hw_frames=64",
+    videoFilterChain.join(","),
     "-c:v",
     "h264_qsv",
     "-preset",
-    "veryfast",
+    quality.preset,
     "-global_quality",
-    "23",
+    String(quality.crispness),
+    "-async_depth",
+    String(quality.qsvAsyncDepth),
     "-c:a",
     "aac",
     "-f",
@@ -82,7 +130,9 @@ function buildQsvArgs(sourcePath: string, outputPath: string): string[] {
   ];
 }
 
-function buildLibx264Args(sourcePath: string, outputPath: string): string[] {
+function buildLibx264Args(sourcePath: string, outputPath: string, quality: TranscodeQualityOptions): string[] {
+  const scaleFilter = formatScaleFilter(quality.scale);
+
   return [
     "-v",
     "error",
@@ -93,12 +143,13 @@ function buildLibx264Args(sourcePath: string, outputPath: string): string[] {
     "0:v:0",
     "-map",
     "0:a:0?",
+    ...(scaleFilter ? ["-vf", scaleFilter] : []),
     "-c:v",
     "libx264",
     "-preset",
-    "veryfast",
+    quality.preset,
     "-crf",
-    "23",
+    String(quality.crispness),
     "-pix_fmt",
     "yuv420p",
     "-c:a",
@@ -116,14 +167,32 @@ class TranscodeService {
     return `${uploadStoreService.getTranscodesDirectory()}/${videoId}.mp4`;
   }
 
-  async transcodeVideo(videoId: string, sourcePath: string): Promise<string> {
+  // Runtime transcode policy (auto switch + quality level) lives in the preferences
+  // store, so the API/UI can flip it without a container restart.
+  resolveRuntimeOptions(): ResolvedTranscodeOptions {
+    const preferences = preferencesService.getPreferences();
+    const qualityLevel = preferences.transcodeQuality;
+
+    return {
+      qualityLevel,
+      quality: transcodeQualityLevels[qualityLevel] ?? transcodeQualityLevels[defaultQualityLevel],
+      autoEnabled: preferences.transcodeAutoEnabled
+    };
+  }
+
+  async transcodeVideo(videoId: string, sourcePath: string, qualityLevel?: TranscodeQualityLevel): Promise<string> {
     const finalPlaybackPath = this.getPlaybackPath(videoId);
     const tempPlaybackPath = `${finalPlaybackPath}.${randomUUID()}.tmp.mp4`;
 
     await unlink(tempPlaybackPath).catch(() => undefined);
 
     const codec = env.transcodeCodec;
-    const args = codec === "qsv" ? buildQsvArgs(sourcePath, tempPlaybackPath) : buildLibx264Args(sourcePath, tempPlaybackPath);
+    const resolvedQuality = qualityLevel ?? this.resolveRuntimeOptions().qualityLevel;
+    const quality = transcodeQualityLevels[resolvedQuality] ?? transcodeQualityLevels[defaultQualityLevel];
+    const args =
+      codec === "qsv"
+        ? buildQsvArgs(sourcePath, tempPlaybackPath, quality)
+        : buildLibx264Args(sourcePath, tempPlaybackPath, quality);
 
     try {
       await execFileAsync("ffmpeg", args, { maxBuffer: 8 * 1024 * 1024 });
@@ -152,4 +221,5 @@ class TranscodeService {
 
 export const transcodeService = new TranscodeService();
 
-export { TranscodeError };
+export { TranscodeError, transcodeQualityLevels };
+export type { TranscodeQualityOptions, ResolvedTranscodeOptions };

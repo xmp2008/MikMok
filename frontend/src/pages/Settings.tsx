@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 import { apiRequest } from "../api/client";
 import { useAuth } from "../hooks/useAuth";
-import { type PlaybackCompletionMode, useUiStore } from "../store/uiStore";
+import { type PlaybackCompletionMode, type TranscodeQualityLevel, useUiStore } from "../store/uiStore";
 
 type HealthData = {
   dbFile: string;
@@ -21,6 +21,9 @@ type HealthData = {
   status: string;
   timestamp: number;
   transcodeEnabled: boolean;
+  transcodeAutoEnabled?: boolean;
+  transcodeQuality?: TranscodeQualityLevel;
+  transcodeCodec?: string;
 };
 
 type JobSnapshot = {
@@ -88,6 +91,12 @@ const playbackCompletionOptions: Array<{ label: string; value: PlaybackCompletio
   { label: "Repeat current", value: "repeat" }
 ];
 
+const transcodeQualityOptions: Array<{ label: string; value: TranscodeQualityLevel }> = [
+  { label: "High (original size, best quality)", value: "high" },
+  { label: "Medium (720p, balanced)", value: "medium" },
+  { label: "Low (480p, weakest WiFi)", value: "low" }
+];
+
 const authModeOptions: Array<{ label: string; value: RemoteSourceAuthMode }> = [
   { label: "None", value: "none" },
   { label: "Session Cookie", value: "session_cookie" },
@@ -137,6 +146,10 @@ export function SettingsPage() {
   const setPlaybackCompletionMode = useUiStore((state) => state.setPlaybackCompletionMode);
   const setSoundOnOpen = useUiStore((state) => state.setSoundOnOpen);
   const soundOnOpen = useUiStore((state) => state.soundOnOpen);
+  const transcodeAutoEnabled = useUiStore((state) => state.transcodeAutoEnabled);
+  const setTranscodeAutoEnabled = useUiStore((state) => state.setTranscodeAutoEnabled);
+  const transcodeQuality = useUiStore((state) => state.transcodeQuality);
+  const setTranscodeQuality = useUiStore((state) => state.setTranscodeQuality);
   const [health, setHealth] = useState<HealthData | null>(null);
   const [jobs, setJobs] = useState<JobSnapshot[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -492,6 +505,84 @@ export function SettingsPage() {
               </span>
             </span>
           </label>
+        </div>
+      </article>
+
+      <article className="list-card settings-card">
+        <div>
+          <p className="eyebrow">Transcoding</p>
+          <h3>Automatic transcoding</h3>
+          <p className="list-card__path">
+            Transcodes prepare clips for smooth playback. Turn auto-transcoding off to keep the NAS CPU idle —
+            non-H.264 clips will then play only after you re-enable it. Pick a lower quality when streaming over
+            weak WiFi.
+          </p>
+        </div>
+        <div className="settings-controls">
+          <div className="settings-control">
+            <div className="settings-control__copy">
+              <p className="settings-control__label">Auto transcode</p>
+              <p className="settings-control__help">
+                {transcodeAutoEnabled
+                  ? "New clips are transcoded automatically in the background."
+                  : "Auto transcoding is paused; the encoder stays idle."}
+              </p>
+            </div>
+            <button
+              aria-checked={transcodeAutoEnabled}
+              className={transcodeAutoEnabled ? "settings-switch settings-switch--active" : "settings-switch"}
+              onClick={() => setTranscodeAutoEnabled(!transcodeAutoEnabled)}
+              role="switch"
+              type="button"
+            >
+              <span className="settings-switch__thumb" />
+            </button>
+          </div>
+
+          <label className="settings-control settings-control--stacked">
+            <div className="settings-control__copy">
+              <p className="settings-control__label">Transcode quality</p>
+              <p className="settings-control__help">
+                {transcodeQuality === "high"
+                  ? "Original resolution, best quality — use on home WiFi."
+                  : transcodeQuality === "low"
+                    ? "480p, leanest bitrate — use on weak WiFi or cellular."
+                    : "720p, balanced quality and bitrate."}
+              </p>
+            </div>
+            <span className="settings-select-wrap">
+              <select
+                className="settings-select"
+                onChange={(event) => setTranscodeQuality(event.target.value as TranscodeQualityLevel)}
+                value={transcodeQuality}
+              >
+                {transcodeQualityOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <span className="settings-select__icon" aria-hidden="true">
+                <svg viewBox="0 0 20 20">
+                  <path
+                    d="M5.25 7.75 10 12.5l4.75-4.75"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="1.8"
+                  />
+                </svg>
+              </span>
+            </span>
+          </label>
+
+          {health ? (
+            <p className="plain-note">
+              Encoder: {health.transcodeCodec ?? "unknown"}
+              {health.transcodeEnabled ? "" : " (disabled via TRANSCODE_ENABLED)"}
+            </p>
+          ) : null}
         </div>
       </article>
 

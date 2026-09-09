@@ -2,6 +2,7 @@ import { db } from "../../db/index.js";
 import { coerceVideoIdToCanonical } from "../integrations/videoIds.js";
 
 type PlaybackCompletionMode = "next" | "repeat" | "stop";
+type TranscodeQualityLevel = "high" | "medium" | "low";
 
 type UserPreferences = {
   favoriteVideoIds: string[];
@@ -9,6 +10,8 @@ type UserPreferences = {
   playbackCompletionMode: PlaybackCompletionMode;
   playbackRate: number;
   soundOnOpen: boolean;
+  transcodeAutoEnabled: boolean;
+  transcodeQuality: TranscodeQualityLevel;
 };
 
 type UserPreferencesPatch = Partial<UserPreferences>;
@@ -18,7 +21,9 @@ const preferenceKeys = {
   lastActiveVideoId: "preferences.last_active_video_id",
   playbackCompletionMode: "preferences.playback_completion_mode",
   playbackRate: "preferences.playback_rate",
-  soundOnOpen: "preferences.sound_on_open"
+  soundOnOpen: "preferences.sound_on_open",
+  transcodeAutoEnabled: "preferences.transcode_auto_enabled",
+  transcodeQuality: "preferences.transcode_quality"
 } as const;
 
 const defaultPreferences: UserPreferences = {
@@ -26,7 +31,9 @@ const defaultPreferences: UserPreferences = {
   lastActiveVideoId: null,
   playbackCompletionMode: "repeat",
   playbackRate: 1,
-  soundOnOpen: false
+  soundOnOpen: false,
+  transcodeAutoEnabled: true,
+  transcodeQuality: "medium"
 };
 
 class PreferencesService {
@@ -48,7 +55,15 @@ class PreferencesService {
         defaultPreferences.playbackCompletionMode
       ),
       playbackRate: this.readNumber(preferenceKeys.playbackRate, defaultPreferences.playbackRate),
-      soundOnOpen: this.readBoolean(preferenceKeys.soundOnOpen, defaultPreferences.soundOnOpen)
+      soundOnOpen: this.readBoolean(preferenceKeys.soundOnOpen, defaultPreferences.soundOnOpen),
+      transcodeAutoEnabled: this.readBoolean(
+        preferenceKeys.transcodeAutoEnabled,
+        defaultPreferences.transcodeAutoEnabled
+      ),
+      transcodeQuality: this.readTranscodeQuality(
+        preferenceKeys.transcodeQuality,
+        defaultPreferences.transcodeQuality
+      )
     };
   }
 
@@ -80,6 +95,14 @@ class PreferencesService {
       this.writeValue(preferenceKeys.soundOnOpen, patch.soundOnOpen ? "1" : "0");
     }
 
+    if (patch.transcodeAutoEnabled !== undefined) {
+      this.writeValue(preferenceKeys.transcodeAutoEnabled, patch.transcodeAutoEnabled ? "1" : "0");
+    }
+
+    if (patch.transcodeQuality) {
+      this.writeValue(preferenceKeys.transcodeQuality, patch.transcodeQuality);
+    }
+
     return this.getPreferences();
   }
 
@@ -104,7 +127,7 @@ class PreferencesService {
       return fallbackValue;
     }
 
-    return value === "1" || value === "true";
+    return value === "1";
   }
 
   private readNullableString(key: string): string | null {
@@ -133,6 +156,16 @@ class PreferencesService {
     return fallbackValue;
   }
 
+  private readTranscodeQuality(key: string, fallbackValue: TranscodeQualityLevel): TranscodeQualityLevel {
+    const value = this.readValue(key);
+
+    if (value === "high" || value === "medium" || value === "low") {
+      return value;
+    }
+
+    return fallbackValue;
+  }
+
   private readStringArray(key: string, fallbackValue: string[]): string[] {
     const value = this.readValue(key);
 
@@ -151,4 +184,4 @@ class PreferencesService {
 
 export const preferencesService = new PreferencesService();
 
-export type { PlaybackCompletionMode, UserPreferences, UserPreferencesPatch };
+export type { PlaybackCompletionMode, TranscodeQualityLevel, UserPreferences, UserPreferencesPatch };

@@ -11,7 +11,9 @@ const preferencesPatchSchema = z.object({
   lastActiveVideoId: z.string().nullable().optional(),
   playbackCompletionMode: z.enum(["stop", "next", "repeat"]).optional(),
   playbackRate: z.number().min(0.25).max(4).optional(),
-  soundOnOpen: z.boolean().optional()
+  soundOnOpen: z.boolean().optional(),
+  transcodeAutoEnabled: z.boolean().optional(),
+  transcodeQuality: z.enum(["high", "medium", "low"]).optional()
 });
 
 preferencesRouter.get("/", (_request, response) => {

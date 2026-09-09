@@ -51,3 +51,47 @@ ffmpeg -init_hw_device qsv=hw:low_power=1 -i in \
 2. **上游兼容**：不设 `TRANSCODE_CODEC` 时行为与上游完全一致。
 3. 仅改动视频编码路径；音频（AAC）、封装（mp4 faststart）、缩略图等
    逻辑不变。
+
+## 第二轮需求：自动硬编运行时开关 + 编码质量档位（2026-09-08）
+
+**需求来源**：自动硬编不能占满 NAS CPU（要能随时关）；外出 WiFi 带宽波动
+（家宽 ~5MB/s vs 外出 0.5~1MB/s），需要按网络选编码质量。
+
+### 新增行为
+
+| 项 | 说明 |
+| --- | --- |
+| 自动转码开关 | `transcodeAutoEnabled`（默认开）。关闭后：新视频不再入队、已排队任务不再启动、运行中判断处直接回退 `needs_transcode`——ffmpeg/QSV 完全不会被拉起。`TRANSCODE_ENABLED=0` 仍然全局强制关闭（优先级最高）。 |
+| 质量档位 | `transcodeQuality`：`high`/`medium`（默认）/`low`。QSV 用 `-global_quality`（23/27/32）+ preset（veryslow/veryfast/veryfast）+ 限高（原画/720p/480p，等比 `scale=-2:-2`/`scale=-4:-2` CPU 侧缩放后 hwupload）+ async_depth（4/4/2）；libx264 同映射用 `-crf`。 |
+| 持久化 | 两个偏好存 `app_state` KV 表（`preferences.transcode_auto_enabled` / `preferences.transcode_quality`），运行时生效，**无需重启容器**。 |
+| API | `PATCH /api/preferences` 新增 `transcodeAutoEnabled: boolean`、`transcodeQuality: "high"\|"medium"\|"low"`；`GET /api/health` 新增上报 `transcodeAutoEnabled`/`transcodeQuality`。 |
+| UI | Settings 页新增 "Transcoding" 卡片：Auto transcode 开关 + Transcode quality 下拉（High 原画/Medium 720p/Low 480p），样式沿用现有 settings-switch/settings-select。 |
+
+### 质量档位设计依据
+
+- `-global_quality` 是 QSV ICQ 原生质量参数，量纲与 x264 CRF 一致（越低越清晰）。
+- medium 锚定 720p：500KB/s 弱上行下 720p@q27 约需 1~1.5MB/s，配 WiFi 好/中
+  场景；low 锚定 480p@q32，按 500KB/s 上行可流畅播放。
+- 缩放在 CPU 侧 `scale` 完成后 `hwupload`（VDEnc 接受 sw 输入）：N5105 做
+  一次缩放远比软编便宜，且避免 QSV 缩放 VPP 在 low_power 路径的能力差异。
+
+### 改动文件（第二轮）
+
+| 文件 | 改动 |
+| --- | --- |
+| `backend/src/services/preferences/preferencesService.ts` | 新增 `transcodeAutoEnabled`/`transcodeQuality` 偏好（app_state 持久化） |
+| `backend/src/routes/preferences.ts` | PATCH schema 接收两个新字段 |
+| `backend/src/services/media/transcodeService.ts` | 质量档位映射表；QSV/libx264 参数按档位构造；`resolveRuntimeOptions()` 读取运行时偏好 |
+| `backend/src/services/jobs/jobWorker.ts` | 开关动态化：`isTranscodingActive()` = env 总闸 AND 运行时偏好；enqueue/pump/执行三处生效；转码按当前档位执行 |
+| `backend/src/routes/health.ts` | 上报运行时开关与档位 |
+| `frontend/src/store/uiStore.ts` | 偏好类型/默认值/同步（沿用 PATCH /preferences 通道） |
+| `frontend/src/pages/Settings.tsx` | Transcoding 卡片（开关+档位下拉+编码器提示） |
+| `backend/Dockerfile` | runtime 层补 bookworm non-free 源（修 `intel-media-va-driver-non-free has no installation candidate`） |
+
+### 设计红线（新增两条）
+
+4. **开关语义**：运行时开关只挡"自动"转码；`TRANSCODE_ENABLED=0` 仍是最高
+   优先级总闸。关闭开关时绝不产生新的 ffmpeg 进程。
+5. **档位即参数**：档位只改编码参数（质量/预设/分辨率上限），不改目标容器、
+   封装与 faststart 行为；QSV 失败不回退软编的红线延续。
+

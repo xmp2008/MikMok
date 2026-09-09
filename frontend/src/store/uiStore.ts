@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { apiRequest } from "../api/client";
 
 export type PlaybackCompletionMode = "next" | "repeat" | "stop";
+export type TranscodeQualityLevel = "high" | "medium" | "low";
 
 export type CachedFeedVideo = {
   author: {
@@ -37,6 +38,8 @@ type UserPreferences = {
   playbackCompletionMode: PlaybackCompletionMode;
   playbackRate: number;
   soundOnOpen: boolean;
+  transcodeAutoEnabled: boolean;
+  transcodeQuality: TranscodeQualityLevel;
 };
 
 type UserPreferencesPatch = Partial<UserPreferences>;
@@ -52,7 +55,9 @@ const defaultPreferences: UserPreferences = {
   lastActiveVideoId: null,
   playbackCompletionMode: "repeat",
   playbackRate: 1,
-  soundOnOpen: false
+  soundOnOpen: false,
+  transcodeAutoEnabled: true,
+  transcodeQuality: "medium"
 };
 
 type UiState = {
@@ -76,9 +81,13 @@ type UiState = {
   setPlaybackRate: (playbackRate: number) => void;
   setResumePositionForVideo: (videoId: string, positionSeconds: number) => void;
   setSoundOnOpen: (enabled: boolean) => void;
+  setTranscodeAutoEnabled: (enabled: boolean) => void;
+  setTranscodeQuality: (quality: TranscodeQualityLevel) => void;
   soundOnOpen: boolean;
   toggleFavoriteId: (videoId: string) => void;
   toggleMute: () => void;
+  transcodeAutoEnabled: boolean;
+  transcodeQuality: TranscodeQualityLevel;
 };
 
 function readLegacyBoolean(key: string, fallbackValue: boolean): boolean {
@@ -171,7 +180,9 @@ function readLegacyPreferences(): { hasLegacyValues: boolean; preferences: UserP
       lastActiveVideoId,
       playbackCompletionMode,
       playbackRate,
-      soundOnOpen
+      soundOnOpen,
+      transcodeAutoEnabled: defaultPreferences.transcodeAutoEnabled,
+      transcodeQuality: defaultPreferences.transcodeQuality
     }
   };
 }
@@ -206,7 +217,9 @@ function applyPreferencesToState(preferences: UserPreferences) {
     lastActiveVideoId: preferences.lastActiveVideoId,
     playbackCompletionMode: preferences.playbackCompletionMode,
     playbackRate: preferences.playbackRate,
-    soundOnOpen: preferences.soundOnOpen
+    soundOnOpen: preferences.soundOnOpen,
+    transcodeAutoEnabled: preferences.transcodeAutoEnabled,
+    transcodeQuality: preferences.transcodeQuality
   };
 }
 
@@ -231,7 +244,9 @@ export const useUiStore = create<UiState>((set, get) => ({
           preferences.lastActiveVideoId === null &&
           preferences.playbackCompletionMode === defaultPreferences.playbackCompletionMode &&
           preferences.playbackRate === defaultPreferences.playbackRate &&
-          preferences.soundOnOpen === defaultPreferences.soundOnOpen;
+          preferences.soundOnOpen === defaultPreferences.soundOnOpen &&
+          preferences.transcodeAutoEnabled === defaultPreferences.transcodeAutoEnabled &&
+          preferences.transcodeQuality === defaultPreferences.transcodeQuality;
 
         if (shouldMigrate) {
           preferences = await patchRemotePreferences(legacy.preferences);
@@ -258,6 +273,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   playbackRate: defaultPreferences.playbackRate,
   preferencesLoaded: false,
   resumePositionByVideoId: {},
+  transcodeAutoEnabled: defaultPreferences.transcodeAutoEnabled,
+  transcodeQuality: defaultPreferences.transcodeQuality,
   setActiveFeedIndex: (index) => {
     set((state) => (state.activeFeedIndex === index ? state : { activeFeedIndex: index }));
   },
@@ -332,6 +349,22 @@ export const useUiStore = create<UiState>((set, get) => ({
       isMuted: !enabled
     });
     void patchRemotePreferences({ soundOnOpen: enabled });
+  },
+  setTranscodeAutoEnabled: (enabled) => {
+    if (get().transcodeAutoEnabled === enabled) {
+      return;
+    }
+
+    set({ transcodeAutoEnabled: enabled });
+    void patchRemotePreferences({ transcodeAutoEnabled: enabled });
+  },
+  setTranscodeQuality: (quality) => {
+    if (get().transcodeQuality === quality) {
+      return;
+    }
+
+    set({ transcodeQuality: quality });
+    void patchRemotePreferences({ transcodeQuality: quality });
   },
   soundOnOpen: defaultPreferences.soundOnOpen,
   toggleFavoriteId: (videoId) => {

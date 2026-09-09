@@ -2,6 +2,7 @@ import { env } from "../../config/env.js";
 import { thumbnailService } from "../media/thumbnailService.js";
 import { TranscodeError, transcodeService } from "../media/transcodeService.js";
 import type { PlaybackStatus } from "../media/playbackPolicy.js";
+import { preferencesService } from "../preferences/preferencesService.js";
 import { videoIndexService } from "../library/videoIndex.js";
 
 import { jobService, type Job } from "./jobService.js";
@@ -11,6 +12,13 @@ const transcodeRetryLimit = 3;
 class JobWorkerService {
   private intervalHandle: NodeJS.Timeout | null = null;
   private pumping = false;
+
+  // Runtime kill switch (preferences.transcodeAutoEnabled). TRANSCODE_ENABLED=0 still
+  // force-disables everything; when the runtime switch is off, queued work is neither
+  // started nor enqueued, so the ffmpeg/QSV encoder never spins up on its own.
+  private isTranscodingActive(): boolean {
+    return env.transcodeEnabled && preferencesService.getPreferences().transcodeAutoEnabled;
+  }
 
   start(): void {
     if (this.intervalHandle) {
@@ -34,7 +42,7 @@ class JobWorkerService {
   }
 
   async enqueueTranscodes(videoIds: string[]): Promise<void> {
-    if (!env.transcodeEnabled) {
+    if (!this.isTranscodingActive()) {
       return;
     }
 
@@ -105,9 +113,12 @@ class JobWorkerService {
       return;
     }
 
-    if (!env.transcodeEnabled) {
+    if (!this.isTranscodingActive()) {
       videoIndexService.updatePlaybackStatus(video.id, "needs_transcode");
-      jobService.markFailed(job.id, "Transcoding is disabled.");
+      jobService.markFailed(
+        job.id,
+        env.transcodeEnabled ? "Transcoding is disabled in settings (auto transcode off)." : "Transcoding is disabled."
+      );
       return;
     }
 
@@ -138,7 +149,11 @@ class JobWorkerService {
 
     try {
       jobService.updateProgress(job.id, 1, 3, "Running ffmpeg.");
-      const playbackPath = await transcodeService.transcodeVideo(video.id, video.sourcePath);
+      const playbackPath = await transcodeService.transcodeVideo(
+        video.id,
+        video.sourcePath,
+        preferencesService.getPreferences().transcodeQuality
+      );
 
       jobService.updateProgress(job.id, 2, 3, "Publishing playback artifact.");
       videoIndexService.updatePlaybackArtifacts(video.id, {
