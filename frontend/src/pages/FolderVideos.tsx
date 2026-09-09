@@ -25,6 +25,23 @@ type FolderVideosResponseMeta = {
   total: number;
 };
 
+function translatePlaybackStatus(status: string): string {
+  switch (status) {
+    case "direct":
+      return "可直连播放";
+    case "ready":
+      return "转码就绪";
+    case "processing":
+      return "转码中";
+    case "needs_transcode":
+      return "需要转码";
+    case "failed":
+      return "转码失败";
+    default:
+      return status;
+  }
+}
+
 export function FolderVideosPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -34,7 +51,7 @@ export function FolderVideosPage() {
 
   useEffect(() => {
     if (!id) {
-      setError("Missing folder id.");
+      setError("缺少文件夹 ID。");
       return;
     }
 
@@ -52,7 +69,7 @@ export function FolderVideosPage() {
         };
 
         if (!response.ok || !payload.success) {
-          throw new Error("Failed to load folder videos.");
+          throw new Error("加载文件夹视频失败。");
         }
 
         if (!cancelled) {
@@ -62,7 +79,7 @@ export function FolderVideosPage() {
         }
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Failed to load folder videos.");
+          setError(loadError instanceof Error ? loadError.message : "加载文件夹视频失败。");
         }
       }
     }
@@ -78,12 +95,12 @@ export function FolderVideosPage() {
     <section className="panel-page folder-videos-page">
       <div className="section-header">
         <div>
-          <p className="eyebrow">Folder</p>
-          <h2>{meta?.folderName ?? "Loading folder..."}</h2>
-          <p className="sheet-copy">Videos in this mount.</p>
+          <p className="eyebrow">文件夹</p>
+          <h2>{meta?.folderName ?? "正在加载…"}</h2>
+          <p className="sheet-copy">此挂载目录中的视频。</p>
         </div>
         <Link className="action-chip" to="/folders">
-          Back
+          返回
         </Link>
       </div>
 
@@ -98,27 +115,25 @@ export function FolderVideosPage() {
               <h3>{video.title}</h3>
               <p className="list-card__path">{video.sourceName}</p>
               <p className="list-card__path">
-                {video.mimeType} · {video.playbackStatus} · {Math.round(video.sourceSize / 1024 / 1024)} MB · updated{" "}
+                {video.mimeType} · {translatePlaybackStatus(video.playbackStatus)} · {Math.round(video.sourceSize / 1024 / 1024)} MB · 更新于{" "}
                 {new Date(video.updatedAt * 1000).toLocaleString()}
               </p>
               <p className="list-card__path">
-                {video.durationSeconds ? `${Math.round(video.durationSeconds)}s` : "duration unknown"}
+                {video.durationSeconds ? `${Math.round(video.durationSeconds)} 秒` : "时长未知"}
                 {video.width && video.height ? ` · ${video.width}×${video.height}` : ""}
               </p>
             </div>
             <div className="folder-video-page__meta">
-              <span className="pill">{video.playCount} plays</span>
-              <span className="pill">resume {Math.round(video.resumePositionSeconds)}s</span>
+              <span className="pill">播放 {video.playCount} 次</span>
+              <span className="pill">续播 {Math.round(video.resumePositionSeconds)} 秒</span>
               <button
-                aria-disabled={video.playbackStatus !== "direct" && video.playbackStatus !== "ready"}
                 className="action-chip action-chip--primary"
-                disabled={video.playbackStatus !== "direct" && video.playbackStatus !== "ready"}
                 onClick={() => {
                   navigate(`/feed?video=${encodeURIComponent(video.id)}`);
                 }}
                 type="button"
               >
-                Play
+                {video.playbackStatus === "direct" || video.playbackStatus === "ready" ? "播放" : "播放（先转码）"}
               </button>
             </div>
           </article>

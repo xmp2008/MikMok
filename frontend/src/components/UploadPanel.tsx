@@ -34,7 +34,7 @@ export function UploadPanel() {
     event.preventDefault();
 
     if (selectedFiles.length === 0) {
-      setError("Select at least one video file.");
+      setError("请至少选择一个视频文件。");
       return;
     }
 
@@ -60,7 +60,7 @@ export function UploadPanel() {
         inputRef.current.value = "";
       }
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Failed to upload files.");
+      setError(submitError instanceof Error ? submitError.message : "上传失败。");
     } finally {
       setIsSubmitting(false);
     }
@@ -70,13 +70,13 @@ export function UploadPanel() {
     <div className="stack-list">
       <form className="upload-panel form-stack" onSubmit={(event) => void handleSubmit(event)}>
         <div>
-          <p className="eyebrow">Upload</p>
-          <h3>Upload</h3>
-          <p className="sheet-copy">Files go into the system Uploads source and reindex into the feed.</p>
+          <p className="eyebrow">上传</p>
+          <h3>上传视频</h3>
+          <p className="sheet-copy">文件会进入系统 Uploads 来源，并重新索引进信息流。</p>
         </div>
 
         <label className="field">
-          Video files
+          视频文件
           <input
             accept={acceptValue}
             multiple
@@ -96,10 +96,10 @@ export function UploadPanel() {
 
         <div className="upload-page__summary upload-panel__actions">
           <p className="sheet-copy">
-            {selectedFiles.length > 0 ? `${selectedFiles.length} files ready to upload.` : "Choose one or more supported video files."}
+            {selectedFiles.length > 0 ? `${selectedFiles.length} 个文件待上传。` : "选择一个或多个支持的视频文件。"}
           </p>
           <button className="action-chip action-chip--primary" disabled={isSubmitting || selectedFiles.length === 0} type="submit">
-            {isSubmitting ? "Uploading..." : "Upload videos"}
+            {isSubmitting ? "上传中…" : "上传视频"}
           </button>
         </div>
 
@@ -127,14 +127,14 @@ export function UploadPanel() {
         <div className="upload-panel__results">
           <article className="upload-panel__result">
             <div>
-              <h3>{result.accepted} videos indexed</h3>
+              <h3>已入库 {result.accepted} 个视频</h3>
               <p className="list-card__path">
-                Batch {result.uploadBatchId} · source {result.folderName}
+                批次 {result.uploadBatchId} · 来源 {result.folderName}
               </p>
-              {result.rejected.length > 0 ? <p className="list-card__path">Rejected: {result.rejected.join(", ")}</p> : null}
+              {result.rejected.length > 0 ? <p className="list-card__path">被拒绝：{result.rejected.join(", ")}</p> : null}
             </div>
             <Link className="action-chip action-chip--primary" to={`/folders/${result.folderId}`}>
-              Open Uploads
+              打开上传库
             </Link>
           </article>
 
@@ -151,7 +151,7 @@ export function UploadPanel() {
                 }}
                 type="button"
               >
-                Play
+                播放
               </button>
             </article>
           ))}

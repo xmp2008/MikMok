@@ -44,10 +44,10 @@ function AppIcon({ name }: { name: "favorites" | "feed" | "folders" | "settings"
 }
 
 const items = [
-  { icon: "feed" as const, label: "For You", to: "/feed" },
-  { icon: "favorites" as const, label: "Favorites", to: "/favorites" },
-  { icon: "folders" as const, label: "Folders", to: "/folders" },
-  { icon: "settings" as const, label: "Settings", to: "/settings" }
+  { icon: "feed" as const, label: "首页", to: "/feed" },
+  { icon: "favorites" as const, label: "收藏", to: "/favorites" },
+  { icon: "folders" as const, label: "文件夹", to: "/folders" },
+  { icon: "settings" as const, label: "设置", to: "/settings" }
 ];
 
 export function BottomNav() {

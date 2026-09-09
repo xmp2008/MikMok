@@ -86,28 +86,28 @@ type RemoteSourceForm = {
 };
 
 const playbackCompletionOptions: Array<{ label: string; value: PlaybackCompletionMode }> = [
-  { label: "Stop", value: "stop" },
-  { label: "Play next", value: "next" },
-  { label: "Repeat current", value: "repeat" }
+  { label: "停止播放", value: "stop" },
+  { label: "播放下一个", value: "next" },
+  { label: "单曲循环", value: "repeat" }
 ];
 
 const transcodeQualityOptions: Array<{ label: string; value: TranscodeQualityLevel }> = [
-  { label: "High (original size, best quality)", value: "high" },
-  { label: "Medium (720p, balanced)", value: "medium" },
-  { label: "Low (480p, weakest WiFi)", value: "low" }
+  { label: "高 · 原画质 6M", value: "high" },
+  { label: "中 · 720p 2.5M", value: "medium" },
+  { label: "低 · 480p 1M", value: "low" }
 ];
 
 const authModeOptions: Array<{ label: string; value: RemoteSourceAuthMode }> = [
-  { label: "None", value: "none" },
-  { label: "Session Cookie", value: "session_cookie" },
-  { label: "Integration API Key", value: "integration_api_key" }
+  { label: "无认证", value: "none" },
+  { label: "会话 Cookie", value: "session_cookie" },
+  { label: "集成 API 密钥", value: "integration_api_key" }
 ];
 
 const scopeModeOptions: Array<{ label: string; value: RemoteSourceScopeMode }> = [
-  { label: "All content", value: "all" },
-  { label: "Selected collections", value: "collections" },
-  { label: "Selected authors", value: "authors" },
-  { label: "Collections + authors", value: "mixed" }
+  { label: "全部内容", value: "all" },
+  { label: "选中的合集", value: "collections" },
+  { label: "选中的作者", value: "authors" },
+  { label: "合集 + 作者", value: "mixed" }
 ];
 
 const emptyRemoteSourceForm: RemoteSourceForm = {
@@ -122,6 +122,46 @@ const emptyRemoteSourceForm: RemoteSourceForm = {
 };
 
 const newRemoteSourceSelectionId = "__new__";
+
+function translateJobStatus(status: string): string {
+  switch (status) {
+    case "queued":
+      return "排队中";
+    case "running":
+      return "进行中";
+    case "succeeded":
+      return "已完成";
+    case "failed":
+      return "失败";
+    default:
+      return status;
+  }
+}
+
+function translateJobProgress(message: string | null): string {
+  switch (message) {
+    case "Queued for transcode.":
+      return "已加入转码队列。";
+    case "Queued for retry.":
+      return "已加入重试队列。";
+    case "Preparing transcode.":
+      return "正在准备转码。";
+    case "Running ffmpeg.":
+      return "正在转码（QSV 硬编）。";
+    case "Publishing playback artifact.":
+      return "正在发布播放文件。";
+    case "Playback ready.":
+      return "可以播放了。";
+    case "Job failed.":
+      return "任务失败。";
+    case "Direct playback is available.":
+      return "该视频可直连播放，无需转码。";
+    case "Transcoded playback is already ready.":
+      return "转码产物已就绪。";
+    default:
+      return message ?? "暂无进度信息。";
+  }
+}
 
 function createRemoteSourceForm(source?: RemoteSource | null): RemoteSourceForm {
   if (!source) {
@@ -177,7 +217,7 @@ export function SettingsPage() {
         }
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Failed to load health data.");
+          setError(loadError instanceof Error ? loadError.message : "加载服务状态失败。");
         }
       }
     }
@@ -201,7 +241,7 @@ export function SettingsPage() {
         }
       } catch (loadError) {
         if (!cancelled) {
-          setJobsError(loadError instanceof Error ? loadError.message : "Failed to load jobs.");
+          setJobsError(loadError instanceof Error ? loadError.message : "加载任务列表失败。");
         }
       }
     }
@@ -240,7 +280,7 @@ export function SettingsPage() {
         }
       } catch (loadError) {
         if (!cancelled) {
-          setRemoteSourceError(loadError instanceof Error ? loadError.message : "Failed to load remote sources.");
+          setRemoteSourceError(loadError instanceof Error ? loadError.message : "加载远程来源失败。");
         }
       } finally {
         if (!cancelled) {
@@ -336,11 +376,11 @@ export function SettingsPage() {
             })
           });
 
-      setRemoteSourceFeedback(selectedRemoteSource ? `Updated ${savedSource.name}.` : `Created ${savedSource.name}.`);
+      setRemoteSourceFeedback(selectedRemoteSource ? `已更新 ${savedSource.name}。` : `已创建 ${savedSource.name}。`);
       await reloadRemoteSources(savedSource.id);
       setRemoteSourceForm(createRemoteSourceForm(savedSource));
     } catch (saveError) {
-      setRemoteSourceError(saveError instanceof Error ? saveError.message : "Failed to save remote source.");
+      setRemoteSourceError(saveError instanceof Error ? saveError.message : "保存远程来源失败。");
     } finally {
       setIsSavingRemoteSource(false);
     }
@@ -359,12 +399,12 @@ export function SettingsPage() {
         method: "DELETE"
       });
 
-      setRemoteSourceFeedback(`Removed ${selectedRemoteSource.name}.`);
+      setRemoteSourceFeedback(`已删除 ${selectedRemoteSource.name}。`);
       setRemoteDiscovery(null);
       setRemoteSourceForm(emptyRemoteSourceForm);
       await reloadRemoteSources(null);
     } catch (deleteError) {
-      setRemoteSourceError(deleteError instanceof Error ? deleteError.message : "Failed to delete remote source.");
+      setRemoteSourceError(deleteError instanceof Error ? deleteError.message : "删除远程来源失败。");
     } finally {
       setIsSavingRemoteSource(false);
     }
@@ -372,7 +412,7 @@ export function SettingsPage() {
 
   async function handleTestRemoteSource() {
     if (!selectedRemoteSource) {
-      setRemoteSourceError("Save the source before testing it.");
+      setRemoteSourceError("请先保存来源再测试。");
       return;
     }
 
@@ -388,11 +428,11 @@ export function SettingsPage() {
       );
 
       setRemoteSourceFeedback(
-        `Connected to ${selectedRemoteSource.name}: ${result.videoCount} videos, ${result.collectionCount} collections.`
+        `已连接 ${selectedRemoteSource.name}：${result.videoCount} 个视频、${result.collectionCount} 个合集。`
       );
       await reloadRemoteSources(selectedRemoteSource.id);
     } catch (testError) {
-      setRemoteSourceError(testError instanceof Error ? testError.message : "Connection test failed.");
+      setRemoteSourceError(testError instanceof Error ? testError.message : "连接测试失败。");
     } finally {
       setIsTestingRemoteSource(false);
     }
@@ -400,7 +440,7 @@ export function SettingsPage() {
 
   async function handleDiscoverRemoteSource() {
     if (!selectedRemoteSource) {
-      setRemoteSourceError("Save the source before discovering collections and authors.");
+      setRemoteSourceError("请先保存来源再执行发现。");
       return;
     }
 
@@ -413,9 +453,9 @@ export function SettingsPage() {
       });
 
       setRemoteDiscovery(result);
-      setRemoteSourceFeedback(`Discovered ${result.videoCount} videos from ${selectedRemoteSource.name}.`);
+      setRemoteSourceFeedback(`从 ${selectedRemoteSource.name} 发现 ${result.videoCount} 个视频。`);
     } catch (discoverError) {
-      setRemoteSourceError(discoverError instanceof Error ? discoverError.message : "Discovery failed.");
+      setRemoteSourceError(discoverError instanceof Error ? discoverError.message : "发现失败。");
     } finally {
       setIsDiscoveringRemoteSource(false);
     }
@@ -443,24 +483,24 @@ export function SettingsPage() {
     <section className="panel-page settings-page">
       <div className="section-header">
         <div>
-          <p className="eyebrow">Settings</p>
-          <h2>Settings</h2>
-          <p className="sheet-copy">Playback and background jobs.</p>
+          <p className="eyebrow">设置</p>
+          <h2>设置</h2>
+          <p className="sheet-copy">播放偏好与后台转码任务。</p>
         </div>
       </div>
 
       <article className="list-card settings-card">
         <div>
-          <p className="eyebrow">Playback</p>
-          <h3>Default playback behavior</h3>
-          <p className="list-card__path">Control how the feed opens and what happens when a clip reaches the end.</p>
+          <p className="eyebrow">播放</p>
+          <h3>默认播放行为</h3>
+          <p className="list-card__path">控制信息流打开方式，以及单个视频播放结束后的动作。</p>
         </div>
         <div className="settings-controls">
           <div className="settings-control">
             <div className="settings-control__copy">
-              <p className="settings-control__label">Sound on open</p>
+              <p className="settings-control__label">打开时出声</p>
               <p className="settings-control__help">
-                {soundOnOpen ? "New feed sessions start with audio enabled." : "New feed sessions start muted."}
+                {soundOnOpen ? "新会话打开信息流时自动开启声音。" : "新会话打开信息流时保持静音。"}
               </p>
             </div>
             <button
@@ -476,8 +516,8 @@ export function SettingsPage() {
 
           <label className="settings-control settings-control--stacked">
             <div className="settings-control__copy">
-              <p className="settings-control__label">When playback finishes</p>
-              <p className="settings-control__help">Choose whether the player stops, advances, or loops the current clip.</p>
+              <p className="settings-control__label">播放结束时</p>
+              <p className="settings-control__help">选择播放器停止、自动下一个还是循环当前视频。</p>
             </div>
             <span className="settings-select-wrap">
               <select
@@ -510,22 +550,21 @@ export function SettingsPage() {
 
       <article className="list-card settings-card">
         <div>
-          <p className="eyebrow">Transcoding</p>
-          <h3>Automatic transcoding</h3>
+          <p className="eyebrow">转码</p>
+          <h3>自动转码</h3>
           <p className="list-card__path">
-            Transcodes prepare clips for smooth playback. Turn auto-transcoding off to keep the NAS CPU idle —
-            non-H.264 clips will then play only after you re-enable it. Pick a lower quality when streaming over
-            weak WiFi.
+            转码让视频播放更流畅。关闭自动转码可让 NAS 保持安静——非 H.264 视频将无法播放，直到重新开启。
+            弱 WiFi 环境建议选择更低画质。
           </p>
         </div>
         <div className="settings-controls">
           <div className="settings-control">
             <div className="settings-control__copy">
-              <p className="settings-control__label">Auto transcode</p>
+              <p className="settings-control__label">自动转码</p>
               <p className="settings-control__help">
                 {transcodeAutoEnabled
-                  ? "New clips are transcoded automatically in the background."
-                  : "Auto transcoding is paused; the encoder stays idle."}
+                  ? "播放到需要转码的视频时自动开始转码（QSV 硬编，不吃 CPU）。"
+                  : "自动转码已暂停，编码器保持空闲。"}
               </p>
             </div>
             <button
@@ -541,13 +580,13 @@ export function SettingsPage() {
 
           <label className="settings-control settings-control--stacked">
             <div className="settings-control__copy">
-              <p className="settings-control__label">Transcode quality</p>
+              <p className="settings-control__label">转码画质</p>
               <p className="settings-control__help">
                 {transcodeQuality === "high"
-                  ? "Original resolution, best quality — use on home WiFi."
+                  ? "原分辨率最佳画质，适合家里宽带环境。"
                   : transcodeQuality === "low"
-                    ? "480p, leanest bitrate — use on weak WiFi or cellular."
-                    : "720p, balanced quality and bitrate."}
+                    ? "480p 最省流量，适合弱 WiFi 或流量环境。"
+                    : "720p 画质与码率均衡，弱 WiFi 也能播。"}
               </p>
             </div>
             <span className="settings-select-wrap">
@@ -579,8 +618,8 @@ export function SettingsPage() {
 
           {health ? (
             <p className="plain-note">
-              Encoder: {health.transcodeCodec ?? "unknown"}
-              {health.transcodeEnabled ? "" : " (disabled via TRANSCODE_ENABLED)"}
+              编码器：{health.transcodeCodec ?? "未知"}
+              {health.transcodeEnabled ? "" : "（已被 TRANSCODE_ENABLED 环境变量禁用）"}
             </p>
           ) : null}
         </div>
@@ -589,45 +628,44 @@ export function SettingsPage() {
       <div className="stack-list">
         <article className="list-card">
           <div>
-            <p className="eyebrow">Access</p>
-            <h3>{authEnabled ? (authenticated ? "Session login enabled" : "Login required for remote sources") : "Auth disabled"}</h3>
+            <p className="eyebrow">访问控制</p>
+            <h3>{authEnabled ? (authenticated ? "会话登录已启用" : "远程源需要先登录") : "未启用认证"}</h3>
             <p className="list-card__path">
               {authEnabled
                 ? authenticated && sessionExpiresAt
-                  ? `Expires at ${new Date(sessionExpiresAt * 1000).toLocaleString()}`
-                  : "Remote source credentials are only exposed after a local admin login."
-                : "Prototype mode bypasses login so the homepage can open directly into playback."}
+                  ? `登录将于 ${new Date(sessionExpiresAt * 1000).toLocaleString()} 过期`
+                  : "远程源凭据仅在管理员登录后才会展示。"
+                : "演示模式跳过登录，首页直接进入播放。"}
             </p>
           </div>
           {authEnabled ? (
             authenticated ? (
               <button className="action-chip" onClick={() => void logout()} type="button">
-                Sign out
+                退出登录
               </button>
             ) : (
               <Link className="action-chip action-chip--primary" to="/login">
-                Sign in
+                去登录
               </Link>
             )
           ) : (
-            <span className="pill pill--solid">Auth off</span>
+            <span className="pill pill--solid">已跳过</span>
           )}
         </article>
 
         <article className="list-card settings-card">
           <div>
-            <p className="eyebrow">MyTube Source</p>
-            <h3>Remote read-only integration</h3>
+            <p className="eyebrow">MyTube 来源</p>
+            <h3>远程只读接入</h3>
             <p className="list-card__path">
-              Configure a backend-managed MyTube source. Credentials stay on the server and are only used through
-              MikMok proxies.
+              配置由后端托管的 MyTube 来源。凭据保存在服务器上，仅通过 MikMok 代理使用。
             </p>
           </div>
           {!authenticated ? (
             <div className="stack-list">
-              <p className="plain-note">Sign in before creating, testing, or discovering remote sources.</p>
+              <p className="plain-note">请先登录，才能创建、测试或发现远程来源。</p>
               <Link className="button" to="/login">
-                Sign in to configure
+                登录后配置
               </Link>
             </div>
           ) : (
@@ -664,24 +702,24 @@ export function SettingsPage() {
                     }}
                     type="button"
                   >
-                    New source
+                    新建来源
                   </button>
                 </div>
                 {selectedRemoteSource ? (
                   <p className="plain-note">
-                    {selectedRemoteSource.hasCredential ? "Credential saved" : "No credential saved"}
+                    {selectedRemoteSource.hasCredential ? "凭据已保存" : "尚未保存凭据"}
                     {selectedRemoteSource.lastValidatedAt
-                      ? ` · validated ${new Date(selectedRemoteSource.lastValidatedAt * 1000).toLocaleString()}`
+                      ? ` · 上次验证 ${new Date(selectedRemoteSource.lastValidatedAt * 1000).toLocaleString()}`
                       : ""}
                   </p>
                 ) : (
-                  <p className="plain-note">Create a source, then run test and discovery.</p>
+                  <p className="plain-note">先创建来源，再执行测试与发现。</p>
                 )}
               </div>
 
               <div className="form-stack">
                 <label className="field">
-                  Source name
+                  来源名称
                   <input
                     onChange={(event) => setRemoteSourceForm((current) => ({ ...current, name: event.target.value }))}
                     placeholder="Studio MyTube"
@@ -690,7 +728,7 @@ export function SettingsPage() {
                 </label>
 
                 <label className="field">
-                  Base URL
+                  基础地址
                   <input
                     onChange={(event) => setRemoteSourceForm((current) => ({ ...current, baseUrl: event.target.value }))}
                     placeholder="https://mytube.example.com"
@@ -699,7 +737,7 @@ export function SettingsPage() {
                 </label>
 
                 <label className="field">
-                  Auth mode
+                  认证方式
                   <select
                     onChange={(event) =>
                       setRemoteSourceForm((current) => ({
@@ -719,7 +757,7 @@ export function SettingsPage() {
 
                 {remoteSourceForm.authMode !== "none" ? (
                   <label className="field">
-                    Credential
+                    凭据
                     <textarea
                       onChange={(event) =>
                         setRemoteSourceForm((current) => ({
@@ -729,10 +767,10 @@ export function SettingsPage() {
                       }
                       placeholder={
                         selectedRemoteSource?.hasCredential
-                          ? "Leave blank to keep the saved credential"
+                          ? "留空则保留已保存的凭据"
                           : remoteSourceForm.authMode === "session_cookie"
-                            ? "Paste the MyTube session cookie"
-                            : "Paste the MyTube integration API key"
+                            ? "粘贴 MyTube 会话 Cookie"
+                            : "粘贴 MyTube 集成 API 密钥"
                       }
                       rows={3}
                       value={remoteSourceForm.credential}
@@ -741,7 +779,7 @@ export function SettingsPage() {
                 ) : null}
 
                 <label className="field">
-                  Scope mode
+                  范围
                   <select
                     onChange={(event) =>
                       setRemoteSourceForm((current) => ({
@@ -761,8 +799,8 @@ export function SettingsPage() {
 
                 <div className="settings-control">
                   <div className="settings-control__copy">
-                    <p className="settings-control__label">Enabled</p>
-                    <p className="settings-control__help">Disabled sources stay configured but do not contribute feed items.</p>
+                    <p className="settings-control__label">启用</p>
+                    <p className="settings-control__help">停用的来源保留配置，但不再产生信息流内容。</p>
                   </div>
                   <button
                     aria-checked={remoteSourceForm.enabled}
@@ -782,7 +820,7 @@ export function SettingsPage() {
 
                 {remoteDiscovery && (remoteSourceForm.scopeMode === "collections" || remoteSourceForm.scopeMode === "mixed") ? (
                   <div className="settings-remote-source__picker">
-                    <p className="settings-control__label">Collections</p>
+                    <p className="settings-control__label">合集</p>
                     <div className="settings-remote-source__options">
                       {remoteDiscovery.collections.map((collection) => (
                         <button
@@ -804,7 +842,7 @@ export function SettingsPage() {
 
                 {remoteDiscovery && (remoteSourceForm.scopeMode === "authors" || remoteSourceForm.scopeMode === "mixed") ? (
                   <div className="settings-remote-source__picker">
-                    <p className="settings-control__label">Authors</p>
+                    <p className="settings-control__label">作者</p>
                     <div className="settings-remote-source__options settings-remote-source__options--authors">
                       {remoteDiscovery.authors.map((author) => (
                         <button
@@ -832,7 +870,7 @@ export function SettingsPage() {
 
               <div className="settings-remote-source__actions">
                 <button className="button" disabled={isSavingRemoteSource} onClick={() => void handleSaveRemoteSource()} type="button">
-                  {isSavingRemoteSource ? "Saving..." : selectedRemoteSource ? "Save changes" : "Create source"}
+                  {isSavingRemoteSource ? "保存中…" : selectedRemoteSource ? "保存修改" : "创建来源"}
                 </button>
                 <button
                   className="button--ghost"
@@ -840,7 +878,7 @@ export function SettingsPage() {
                   onClick={() => void handleTestRemoteSource()}
                   type="button"
                 >
-                  {isTestingRemoteSource ? "Testing..." : "Test connection"}
+                  {isTestingRemoteSource ? "测试中…" : "测试连接"}
                 </button>
                 <button
                   className="button--ghost"
@@ -848,16 +886,16 @@ export function SettingsPage() {
                   onClick={() => void handleDiscoverRemoteSource()}
                   type="button"
                 >
-                  {isDiscoveringRemoteSource ? "Discovering..." : "Discover authors & collections"}
+                  {isDiscoveringRemoteSource ? "发现中…" : "发现作者与合集"}
                 </button>
                 {selectedRemoteSource ? (
                   <button className="button--ghost" disabled={isSavingRemoteSource} onClick={() => void handleDeleteRemoteSource()} type="button">
-                    Remove source
+                    删除来源
                   </button>
                 ) : null}
               </div>
 
-              {isLoadingRemoteSources ? <p className="plain-note">Loading remote sources...</p> : null}
+              {isLoadingRemoteSources ? <p className="plain-note">正在加载远程来源…</p> : null}
               {remoteSourceError ? <p className="error-text">{remoteSourceError}</p> : null}
               {remoteSourceFeedback ? <p className="plain-note">{remoteSourceFeedback}</p> : null}
             </div>
@@ -866,29 +904,29 @@ export function SettingsPage() {
 
         <article className="list-card">
           <div>
-            <p className="eyebrow">Backend</p>
+            <p className="eyebrow">后端服务</p>
             <h3>{health?.service ?? "MikMok API"}</h3>
             <p className="list-card__path">
               {error
                 ? error
                 : health
-                  ? `${health.status} in ${health.environment}, db at ${health.dbFile}, ffmpeg ${health.ffmpegAvailable ? "ready" : "missing"}, ffprobe ${health.ffprobeAvailable ? "ready" : "missing"}, jobs ${health.jobs.running} running / ${health.jobs.queued} queued / ${health.jobs.failed} failed`
-                  : "Loading health snapshot..."}
+                  ? `${health.status} · ${health.environment} · 数据库 ${health.dbFile} · ffmpeg ${health.ffmpegAvailable ? "就绪" : "缺失"} · ffprobe ${health.ffprobeAvailable ? "就绪" : "缺失"} · 任务 ${health.jobs.running} 进行 / ${health.jobs.queued} 排队 / ${health.jobs.failed} 失败`
+                  : "正在加载服务状态…"}
             </p>
           </div>
-          <span className="pill pill--solid">{health?.transcodeEnabled ? "Transcode on" : "Transcode off"}</span>
+          <span className="pill pill--solid">{health?.transcodeEnabled ? "转码开启" : "转码关闭"}</span>
         </article>
 
         <article className="list-card">
           <div>
-            <p className="eyebrow">Recent Jobs</p>
-            <h3>{jobsError ? "Job feed unavailable" : "Background processing"}</h3>
+            <p className="eyebrow">最近任务</p>
+            <h3>{jobsError ? "任务列表不可用" : "后台处理"}</h3>
             <p className="list-card__path">
               {jobsError
                 ? jobsError
                 : jobs.length > 0
-                  ? "Transcode jobs are persisted in SQLite and polled by the in-process worker."
-                  : "No background jobs have been recorded yet."}
+                  ? "转码任务保存在 SQLite 中，由内置 worker 轮询执行。"
+                  : "还没有后台任务记录。"}
             </p>
           </div>
           <div className="stack-list">
@@ -896,19 +934,19 @@ export function SettingsPage() {
               <article key={job.id} className="list-card">
                 <div>
                   <p className="eyebrow">
-                    {job.type} · {job.status}
+                    {job.type === "transcode" ? "转码" : job.type} · {translateJobStatus(job.status)}
                   </p>
                   <h3>{job.relatedEntityId ?? job.id}</h3>
                   <p className="list-card__path">
-                    {job.progressMessage ?? "No progress message yet."}
+                    {translateJobProgress(job.progressMessage)}
                     {job.progressTotal > 0 ? ` (${job.progressCurrent}/${job.progressTotal})` : ""}
                   </p>
                   <p className="list-card__path">
-                    attempt {job.attemptCount} · updated {new Date(job.updatedAt * 1000).toLocaleString()}
+                    第 {job.attemptCount} 次尝试 · 更新于 {new Date(job.updatedAt * 1000).toLocaleString()}
                   </p>
                   {job.lastError ? <p className="list-card__path">{job.lastError}</p> : null}
                 </div>
-                <span className="pill">{job.status}</span>
+                <span className="pill">{translateJobStatus(job.status)}</span>
               </article>
             ))}
           </div>

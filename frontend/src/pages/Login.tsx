@@ -25,7 +25,7 @@ export function LoginPage() {
       await login(password);
       redirectToFeed();
     } catch (loginError) {
-      setError(loginError instanceof Error ? loginError.message : "Login failed.");
+      setError(loginError instanceof Error ? loginError.message : "登录失败。");
     } finally {
       setSubmitting(false);
     }
@@ -34,26 +34,25 @@ export function LoginPage() {
   return (
     <div className="screen-center">
       <section className="glass-panel">
-        <p className="eyebrow">Local-first playback</p>
+        <p className="eyebrow">本地私有播放</p>
         <h1>MikMok</h1>
         <p className="hero__blurb">
-          Private short-video hosting for home servers, with a vertical feed and an intentionally small operating
-          surface.
+          家庭服务器上的私人短视频库，竖屏信息流，极简操作界面。
         </p>
         <form className="form-stack" onSubmit={handleSubmit}>
           <label className="field">
-            <span>Password</span>
+            <span>密码</span>
             <input
               autoComplete="current-password"
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="Enter deployment password"
+              placeholder="输入部署密码"
               type="password"
               value={password}
             />
           </label>
           {error ? <p className="error-text">{error}</p> : null}
           <button className="button" disabled={submitting} type="submit">
-            {submitting ? "Signing in..." : "Sign in"}
+            {submitting ? "登录中…" : "登录"}
           </button>
         </form>
       </section>

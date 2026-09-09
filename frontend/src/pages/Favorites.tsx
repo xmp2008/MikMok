@@ -4,6 +4,23 @@ import { useNavigate } from "react-router-dom";
 import { apiRequest } from "../api/client";
 import { useUiStore } from "../store/uiStore";
 
+function translatePlaybackStatus(status: string): string {
+  switch (status) {
+    case "direct":
+      return "可直连播放";
+    case "ready":
+      return "转码就绪";
+    case "processing":
+      return "转码中";
+    case "needs_transcode":
+      return "需要转码";
+    case "failed":
+      return "转码失败";
+    default:
+      return status;
+  }
+}
+
 type FavoriteVideo = {
   durationSeconds: number | null;
   folderName: string;
@@ -42,7 +59,7 @@ export function FavoritesPage() {
         }
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Failed to load favorites.");
+          setError(loadError instanceof Error ? loadError.message : "加载收藏失败。");
         }
       } finally {
         if (!cancelled) {
@@ -67,11 +84,11 @@ export function FavoritesPage() {
     <section className="panel-page">
       <div className="section-header">
         <div>
-          <p className="eyebrow">Favorites</p>
-          <h2>Favorites</h2>
-          <p className="sheet-copy">Saved clips.</p>
+          <p className="eyebrow">收藏</p>
+          <h2>收藏</h2>
+          <p className="sheet-copy">已收藏的视频。</p>
         </div>
-        <span className="pill">{favoriteVideos.length} saved</span>
+        <span className="pill">{favoriteVideos.length} 个</span>
       </div>
 
       <div className="stack-list">
@@ -83,15 +100,15 @@ export function FavoritesPage() {
 
         {isLoading ? (
           <article className="list-card">
-            <p>Loading favorite videos...</p>
+            <p>正在加载收藏…</p>
           </article>
         ) : null}
 
         {!isLoading && favoriteVideos.length === 0 ? (
           <article className="list-card">
             <div>
-              <h3>No favorites yet</h3>
-              <p className="list-card__path">Tap the heart button in the feed to save videos here.</p>
+              <h3>还没有收藏</h3>
+              <p className="list-card__path">在信息流里点小心心，视频就会出现在这里。</p>
             </div>
           </article>
         ) : null}
@@ -108,12 +125,12 @@ export function FavoritesPage() {
                 #{video.folderName} · {video.mimeType} · {Math.round(video.sourceSize / 1024 / 1024)} MB
               </p>
               <p className="list-card__path">
-                {video.durationSeconds ? `${Math.round(video.durationSeconds)}s` : "duration unknown"}
+                {video.durationSeconds ? `${Math.round(video.durationSeconds)} 秒` : "时长未知"}
                 {video.width && video.height ? ` · ${video.width}×${video.height}` : ""}
               </p>
             </div>
             <div className="folder-video-page__meta">
-              <span className="pill">{video.playbackStatus}</span>
+              <span className="pill">{translatePlaybackStatus(video.playbackStatus)}</span>
               <button
                 className="action-chip"
                 onClick={() => {
@@ -121,7 +138,7 @@ export function FavoritesPage() {
                 }}
                 type="button"
               >
-                Remove
+                取消收藏
               </button>
               <button
                 className="action-chip action-chip--primary"
@@ -130,7 +147,7 @@ export function FavoritesPage() {
                 }}
                 type="button"
               >
-                Play
+                播放
               </button>
             </div>
           </article>

@@ -3,6 +3,23 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { apiRequest } from "../api/client";
 
+function translatePlaybackStatus(status: string): string {
+  switch (status) {
+    case "direct":
+      return "可直连播放";
+    case "ready":
+      return "转码就绪";
+    case "processing":
+      return "转码中";
+    case "needs_transcode":
+      return "需要转码";
+    case "failed":
+      return "转码失败";
+    default:
+      return status;
+  }
+}
+
 type AuthorSummary = {
   avatarUrl: string | null;
   id: string;
@@ -56,7 +73,7 @@ export function AuthorPage() {
     const currentAuthorKey = authorKey;
 
     if (!currentAuthorKey) {
-      setError("Missing author id.");
+      setError("缺少作者 ID。");
       setIsLoading(false);
       return;
     }
@@ -81,7 +98,7 @@ export function AuthorPage() {
         }
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Failed to load author page.");
+          setError(loadError instanceof Error ? loadError.message : "加载作者页面失败。");
         }
       } finally {
         if (!cancelled) {
@@ -101,14 +118,14 @@ export function AuthorPage() {
     <section className="panel-page author-page">
       <div className="section-header">
         <div>
-          <p className="eyebrow">Author</p>
-          <h2>{author?.name ?? "Loading author..."}</h2>
+          <p className="eyebrow">作者</p>
+          <h2>{author?.name ?? "正在加载…"}</h2>
           <p className="sheet-copy">
-            {author ? `${author.sourceName} · ${author.videoCount} videos` : "Loading videos from the remote source."}
+            {author ? `${author.sourceName} · ${author.videoCount} 个视频` : "正在从远程来源加载视频。"}
           </p>
         </div>
         <Link className="action-chip" to="/feed">
-          Back to feed
+          返回信息流
         </Link>
       </div>
 
@@ -121,7 +138,7 @@ export function AuthorPage() {
             <div>
               <h3>{author.name}</h3>
               <p className="list-card__path">
-                {author.sourceName} · {author.videoCount} videos
+                {author.sourceName} · {author.videoCount} 个视频
               </p>
             </div>
           </div>
@@ -138,13 +155,13 @@ export function AuthorPage() {
 
         {isLoading ? (
           <article className="list-card">
-            <p>Loading author videos...</p>
+            <p>正在加载作者视频…</p>
           </article>
         ) : null}
 
         {!isLoading && !error && videos.length === 0 ? (
           <article className="list-card">
-            <p>No videos match this author in the current remote-source scope.</p>
+            <p>当前远程来源范围内没有该作者的视频。</p>
           </article>
         ) : null}
 
@@ -160,7 +177,7 @@ export function AuthorPage() {
                 {video.folderName} · {video.mimeType} · {formatFileSize(video.sourceSize)}
               </p>
               <p className="list-card__path">
-                {video.durationSeconds ? `${Math.round(video.durationSeconds)}s` : "duration unknown"}
+                {video.durationSeconds ? `${Math.round(video.durationSeconds)} 秒` : "时长未知"}
                 {video.width && video.height ? ` · ${video.width}×${video.height}` : ""}
               </p>
               {video.collections.length > 0 ? (
@@ -174,7 +191,7 @@ export function AuthorPage() {
               ) : null}
             </div>
             <div className="folder-video-page__meta">
-              <span className="pill">{video.playbackStatus}</span>
+              <span className="pill">{translatePlaybackStatus(video.playbackStatus)}</span>
               <button
                 className="action-chip action-chip--primary"
                 onClick={() => {
@@ -182,7 +199,7 @@ export function AuthorPage() {
                 }}
                 type="button"
               >
-                Play
+                播放
               </button>
             </div>
           </article>

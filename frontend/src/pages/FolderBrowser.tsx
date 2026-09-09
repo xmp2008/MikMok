@@ -32,6 +32,21 @@ const emptyForm = {
   name: ""
 };
 
+function translateScanStatus(status: string): string {
+  switch (status) {
+    case "idle":
+      return "待扫描";
+    case "scanning":
+      return "扫描中";
+    case "ready":
+      return "扫描完成";
+    case "failed":
+      return "扫描失败";
+    default:
+      return status;
+  }
+}
+
 export function FolderBrowserPage() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +72,7 @@ export function FolderBrowserPage() {
         }
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Failed to load folders.");
+          setError(loadError instanceof Error ? loadError.message : "加载挂载目录失败。");
         }
       } finally {
         if (!cancelled) {
@@ -103,13 +118,13 @@ export function FolderBrowserPage() {
 
       setFeedback(
         mountedFolder.scanStatus === "scanning"
-          ? `Mounted ${mountedFolder.name}. Background scan started.`
-          : `Mounted ${mountedFolder.name} with ${mountedFolder.videoCount} videos.`
+          ? `已挂载 ${mountedFolder.name}，后台扫描已开始。`
+          : `已挂载 ${mountedFolder.name}，发现 ${mountedFolder.videoCount} 个视频。`
       );
       setForm(emptyForm);
       setReloadKey((current) => current + 1);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Failed to mount folder.");
+      setError(submitError instanceof Error ? submitError.message : "挂载目录失败。");
     } finally {
       setIsSubmitting(false);
     }
@@ -126,12 +141,12 @@ export function FolderBrowserPage() {
 
       setFeedback(
         scanResult.scanStatus === "scanning"
-          ? `Started scanning ${scanResult.name}. This can take a while on large folders.`
-          : `Scanned ${scanResult.name}: ${scanResult.videoCount} videos ready.`
+          ? `已开始扫描 ${scanResult.name}，大目录可能需要一些时间。`
+          : `扫描完成 ${scanResult.name}：${scanResult.videoCount} 个视频就绪。`
       );
       setReloadKey((current) => current + 1);
     } catch (scanError) {
-      setError(scanError instanceof Error ? scanError.message : "Failed to scan folder.");
+      setError(scanError instanceof Error ? scanError.message : "扫描文件夹失败。");
     } finally {
       setActiveFolderId(null);
     }
@@ -146,11 +161,11 @@ export function FolderBrowserPage() {
         method: "DELETE"
       });
 
-      const folderName = folders.find((folder) => folder.id === folderId)?.name ?? "folder";
-      setFeedback(`Removed ${folderName} from mounted sources.`);
+      const folderName = folders.find((folder) => folder.id === folderId)?.name ?? "目录";
+      setFeedback(`已从挂载来源中移除 ${folderName}。`);
       setReloadKey((current) => current + 1);
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Failed to remove folder.");
+      setError(deleteError instanceof Error ? deleteError.message : "移除文件夹失败。");
     } finally {
       setActiveFolderId(null);
     }
@@ -160,24 +175,24 @@ export function FolderBrowserPage() {
     <section className="panel-page mounts-page">
       <div className="section-header">
         <div>
-          <p className="eyebrow">Mounts</p>
-          <h2>Mounts</h2>
-          <p className="sheet-copy">Add a path, scan it, and browse its videos.</p>
+          <p className="eyebrow">媒体库</p>
+          <h2>挂载目录</h2>
+          <p className="sheet-copy">添加路径、扫描入库，然后浏览其中的视频。</p>
         </div>
       </div>
 
       <form className="mounts-page__composer folder-browser__create" onSubmit={(event) => void handleSubmit(event)}>
         <div className="form-stack folder-browser__form">
           <label className="field">
-            Label
+            名称
             <input
               onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-              placeholder="Travel Shorts"
+              placeholder="旅行短片"
               value={form.name}
             />
           </label>
           <label className="field">
-            Mount path
+            挂载路径
             <input
               onChange={(event) => setForm((current) => ({ ...current, mountPath: event.target.value }))}
               placeholder="/mounts"
@@ -187,9 +202,9 @@ export function FolderBrowserPage() {
           </label>
         </div>
         <div className="folder-browser__actions">
-          <p className="plain-note">The path must live under an allowed backend mount root.</p>
+          <p className="plain-note">路径必须位于后端允许的挂载根目录内。</p>
           <button className="action-chip action-chip--primary" disabled={isSubmitting} type="submit">
-            {isSubmitting ? "Mounting..." : "Add mount"}
+            {isSubmitting ? "挂载中…" : "添加挂载"}
           </button>
         </div>
       </form>
@@ -209,12 +224,12 @@ export function FolderBrowserPage() {
         ) : null}
         {isLoading ? (
           <article className="mounts-page__notice">
-            <p>Loading mounted folders...</p>
+            <p>正在加载挂载目录…</p>
           </article>
         ) : null}
         {!isLoading && folders.length === 0 ? (
           <article className="mounts-page__notice">
-            <p>No mounted folders yet. Add one above to populate the feed.</p>
+            <p>还没有挂载目录。在上方添加一个，信息流就有内容了。</p>
           </article>
         ) : null}
         {folders.map((folder) => (
@@ -223,14 +238,14 @@ export function FolderBrowserPage() {
               <h3>{folder.name}</h3>
               <p className="list-card__path">{folder.mountPath}</p>
               <p className="list-card__path">
-                {folder.isSystem ? "system source · " : ""}
-                {folder.scanStatus} · {folder.videoCount} videos
-                {folder.lastScannedAt ? ` · scanned ${new Date(folder.lastScannedAt * 1000).toLocaleString()}` : ""}
+                {folder.isSystem ? "系统来源 · " : ""}
+                {translateScanStatus(folder.scanStatus)} · {folder.videoCount} 个视频
+                {folder.lastScannedAt ? ` · 上次扫描 ${new Date(folder.lastScannedAt * 1000).toLocaleString()}` : ""}
               </p>
             </div>
             <div className="folder-browser__actions">
               <Link className="action-chip action-chip--primary" to={`/folders/${folder.id}`}>
-                Open videos
+                打开视频
               </Link>
               <button
                 className="action-chip"
@@ -238,7 +253,7 @@ export function FolderBrowserPage() {
                 onClick={() => void handleScan(folder.id)}
                 type="button"
               >
-                {activeFolderId === folder.id || folder.scanStatus === "scanning" ? "Scanning..." : "Scan now"}
+                {activeFolderId === folder.id || folder.scanStatus === "scanning" ? "扫描中…" : "立即扫描"}
               </button>
               {!folder.isSystem ? (
                 <button
@@ -247,7 +262,7 @@ export function FolderBrowserPage() {
                   onClick={() => void handleDelete(folder.id)}
                   type="button"
                 >
-                  Remove
+                  移除
                 </button>
               ) : null}
             </div>
