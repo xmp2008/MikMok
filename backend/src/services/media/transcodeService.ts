@@ -22,7 +22,8 @@ type TranscodeQualityOptions = {
   bufferSize: string;
   // Preset: encoder speed/efficiency tradeoff (QSV VDEnc presets + x264 presets).
   preset: string;
-  // Scale factor applied to the source resolution; null keeps the source size.
+  // Target video HEIGHT for downscaling (null keeps the source resolution).
+  // Only ever shrinks: heights above the source height are ignored via min().
   scale: number | null;
   // Encoder look-ahead buffer depth for QSV (lower = snappier on weak iGPUs).
   qsvAsyncDepth: number;
@@ -53,8 +54,8 @@ const defaultQualityLevel: TranscodeQualityLevel = "medium";
 // - low: capped at 480p, 1M avg (~125 KB/s) — weakest hotel/cellular uplinks.
 const transcodeQualityLevels: Record<TranscodeQualityLevel, TranscodeQualityOptions> = {
   high: { avgBitrate: "6M", maxBitrate: "8M", bufferSize: "12M", preset: "veryslow", scale: null, qsvAsyncDepth: 4 },
-  medium: { avgBitrate: "2500k", maxBitrate: "3500k", bufferSize: "6000k", preset: "veryfast", scale: -2, qsvAsyncDepth: 4 },
-  low: { avgBitrate: "1000k", maxBitrate: "1400k", bufferSize: "2400k", preset: "veryfast", scale: -4, qsvAsyncDepth: 2 }
+  medium: { avgBitrate: "2500k", maxBitrate: "3500k", bufferSize: "6000k", preset: "veryfast", scale: 720, qsvAsyncDepth: 4 },
+  low: { avgBitrate: "1000k", maxBitrate: "1400k", bufferSize: "2400k", preset: "veryfast", scale: 480, qsvAsyncDepth: 2 }
 };
 
 function normalizeError(error: unknown): TranscodeError {
@@ -87,8 +88,9 @@ function isQsvConfigurationError(message: string): boolean {
 }
 
 function formatScaleFilter(scale: number | null): string | null {
-  // Negative ffmpeg scale values keep the aspect ratio and only downscale.
-  return scale === null ? null : `scale=${scale}:-2`;
+  // Keep aspect ratio (-2 width), cap the height at the tier target, never
+  // upscale. The quoted min() protects the comma from the filtergraph parser.
+  return scale === null ? null : `scale=-2:'min(ih,${scale})'`;
 }
 
 function buildQsvArgs(sourcePath: string, outputPath: string, quality: TranscodeQualityOptions): string[] {
