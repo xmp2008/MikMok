@@ -15,7 +15,13 @@ const envSchema = z.object({
   MAX_UPLOAD_SIZE_MB: z.coerce.number().positive().default(500),
   TRANSCODE_ENABLED: z
     .union([z.literal("0"), z.literal("1"), z.literal("true"), z.literal("false")])
-    .default("1")
+    .default("1"),
+  // Transcode video encoder: "qsv" = Intel Quick Sync (hardware, low_power/VDEnc path
+  // for Jasper Lake and other low-power iGPUs), "libx264" = software x264.
+  // NOTE: qsv NEVER silently falls back to software; failures surface as job errors.
+  TRANSCODE_CODEC: z.enum(["qsv", "libx264"]).default("libx264"),
+  // DRI render node used by the QSV encoder (must be exposed to the container).
+  TRANSCODE_QSV_DEVICE: z.string().default("/dev/dri/renderD128")
 });
 
 const parsed = envSchema.parse(process.env);
@@ -24,5 +30,7 @@ export const env = {
   ...parsed,
   remoteSourceSecret: parsed.REMOTE_SOURCE_SECRET?.trim() || parsed.MIKMOK_PASSWORD,
   transcodeEnabled: parsed.TRANSCODE_ENABLED === "1" || parsed.TRANSCODE_ENABLED === "true",
+  transcodeCodec: parsed.TRANSCODE_CODEC,
+  qsvDevice: parsed.TRANSCODE_QSV_DEVICE,
   allowedMountRoots: parsed.ALLOWED_MOUNT_ROOTS.split(",").map((value) => value.trim()).filter(Boolean)
 };

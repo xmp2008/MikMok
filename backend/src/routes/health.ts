@@ -21,6 +21,7 @@ healthRouter.get("/", async (_request, response) => {
     environment: env.NODE_ENV,
     timestamp: Math.floor(Date.now() / 1000),
     transcodeEnabled: env.transcodeEnabled,
+    transcodeCodec: env.transcodeCodec,
     ffmpegAvailable,
     ffprobeAvailable,
     jobs: jobService.getJobCounts(),

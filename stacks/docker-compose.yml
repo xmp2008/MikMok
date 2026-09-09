@@ -21,4 +21,11 @@ services:
       - SESSION_TTL_DAYS=${SESSION_TTL_DAYS:-7}
       - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-500}
       - TRANSCODE_ENABLED=${TRANSCODE_ENABLED:-1}
+      # Hardware (QSV) transcode by default; set to "libx264" to opt into software encoding.
+      - TRANSCODE_CODEC=${TRANSCODE_CODEC:-qsv}
+      - TRANSCODE_QSV_DEVICE=${TRANSCODE_QSV_DEVICE:-/dev/dri/renderD128}
+    devices:
+      # Intel iGPU render node for QSV. On hosts without a GPU, remove this block
+      # and set TRANSCODE_CODEC=libx264 (software) or TRANSCODE_ENABLED=0.
+      - ${TRANSCODE_QSV_DEVICE:-/dev/dri/renderD128}:${TRANSCODE_QSV_DEVICE:-/dev/dri/renderD128}
     restart: unless-stopped

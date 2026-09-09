@@ -64,6 +64,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     ca-certificates \
+    intel-media-va-driver-non-free \
     && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
@@ -74,6 +75,9 @@ ENV ALLOWED_MOUNT_ROOTS=/mounts
 ENV SESSION_TTL_DAYS=7
 ENV MAX_UPLOAD_SIZE_MB=500
 ENV TRANSCODE_ENABLED=1
+# Hardware (QSV) transcode by default; set to "libx264" to opt into software encoding.
+ENV TRANSCODE_CODEC=qsv
+ENV TRANSCODE_QSV_DEVICE=/dev/dri/renderD128
 
 COPY package*.json ./
 COPY backend/package.json backend/package.json
@@ -94,4 +98,4 @@ RUN mkdir -p \
 
 EXPOSE 5552
 
-CMD ["node", "backend/dist/server.js"]
+CMD ["node", "/app/backend/dist/server.js"]
