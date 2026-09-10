@@ -207,6 +207,8 @@ a {
   border-radius: 32px;
   padding: 24px;
   display: grid;
+  /* 显式可收缩轨道: 防止长 token(UUID/路径)把隐式列撑到 min-content 之外 */
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
 }
 
@@ -216,7 +218,13 @@ a {
   min-width: 0;
   margin: 20px auto 112px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
+}
+
+/* 标题中的无空格长 token(任务 UUID/文件路径)可断行, 不再横向撑爆卡片 */
+h3 {
+  overflow-wrap: anywhere;
 }
 
 .panel-page .section-header h2,
